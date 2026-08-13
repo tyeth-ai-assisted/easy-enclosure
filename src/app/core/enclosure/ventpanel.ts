@@ -181,6 +181,26 @@ const extraScrewHoleCutouts = (
     });
 };
 
+// Derived dimensions of the louvre blade stack, shared between the blade
+// builder and the rain collar (whose rim must meet the blades' leading
+// edges). The blades sit flush with the inner wall face and span `extent`
+// along the vent axis, so their leading (outer) edges all lie on the plane
+// z = -wallDepth/2 + extent.
+const louvreStack = (vent: VentPanel) => {
+  const count = Math.max(2, Math.round(vent.louvreCount));
+  const angleFromWall = Math.min(75, Math.max(15, vent.louvreAngle));
+  const thickness = Math.max(0.4, vent.louvreThickness);
+
+  // Tilt measured from the vent axis; blade chord direction is
+  // (0, -sin(tilt), cos(tilt)) - i.e. downhill towards -Y going outward.
+  const tilt = degToRad(90 - angleFromWall);
+  const pitch = vent.diameter / Math.max(1, count);
+  const chord = (LOUVRE_OVERLAP * pitch) / Math.sin(tilt);
+  const extent = chord * Math.cos(tilt) + thickness * Math.sin(tilt);
+
+  return { count, thickness, tilt, pitch, chord, extent };
+};
+
 // Angled, overlapping rain-louvre blades spanning the bore. Each blade is
 // tilted so its outer edge sits lower (towards -Y, the drain direction) than
 // its inner edge, and adjacent blades overlap in Y-projection so there is no
@@ -188,20 +208,12 @@ const extraScrewHoleCutouts = (
 // wall face and protrude outward, never into the enclosure.
 const louvres = (vent: VentPanel, wallDepth: number): Geom3 | null => {
   const bore = vent.diameter;
-  const count = Math.max(2, Math.round(vent.louvreCount));
-  const angleFromWall = Math.min(75, Math.max(15, vent.louvreAngle));
-  const thickness = Math.max(0.4, vent.louvreThickness);
 
   if (bore <= 0) {
     return null;
   }
 
-  // Tilt measured from the vent axis; blade chord direction is
-  // (0, -sin(tilt), cos(tilt)) - i.e. downhill towards -Y going outward.
-  const tilt = degToRad(90 - angleFromWall);
-  const pitch = bore / count;
-  const chord = (LOUVRE_OVERLAP * pitch) / Math.sin(tilt);
-  const extent = chord * Math.cos(tilt) + thickness * Math.sin(tilt);
+  const { count, thickness, tilt, pitch, chord, extent } = louvreStack(vent);
   const bladeCenterZ = -wallDepth / 2 + extent / 2;
   const bladeLength = bore + LOUVRE_RIM_EMBED * 2;
 
@@ -284,8 +296,14 @@ const meshGrille = (vent: VentPanel, wallDepth: number): Geom3 | null => {
 // "top" - the direction opposite the resolved louvre drain direction (local
 // +Y in the canonical frame) - since top-down rain is already shed by the
 // louvre slope.
+//
+// The rim is not a flat circle: like a pipe sliced at an angle, its outer
+// edge lies on a plane tilted about the local X axis. At the top (the gap
+// edges) the rim height equals the louvre blades' leading-edge protrusion,
+// so collar and topmost slat read as one continuous line; sweeping down
+// towards the drain side the collar flares progressively outward, reaching
+// `ring.height` (the maximum standoff) at the bottom-most point.
 const rainRing = (vent: VentPanel, ring: VentRainRing, wallDepth: number): Geom3 | null => {
-  const height = Math.max(1, ring.height);
   const wallT = Math.max(0.8, ring.wallThickness);
   const gap = Math.min(170, Math.max(0, ring.gapAngleDeg));
   // Sit just outside the louvre stack, which is trimmed to the bore circle
@@ -297,44 +315,76 @@ const rainRing = (vent: VentPanel, ring: VentRainRing, wallDepth: number): Geom3
     return null;
   }
 
+  // Height at the top (gap edges): flush with the louvre blades' leading
+  // edges, which all lie on z = -wallDepth/2 + extent.
+  const topHeight = Math.max(1, louvreStack(vent).extent - wallDepth);
+  // Height at the bottom-most point (opposite the gap): the ring's height
+  // parameter, never less than the top so the collar only flares outward.
+  const bottomHeight = Math.max(ring.height, topHeight);
+
   const z0 = wallDepth / 2 - EMBED;
-  const z1 = wallDepth / 2 + height;
-  const centerZ = (z0 + z1) / 2;
+  const zBottomRim = wallDepth / 2 + bottomHeight;
+  const centerZ = (z0 + zBottomRim) / 2;
 
   const annulus = subtract(
     cylinder({
       radius: outerRadius,
-      height: z1 - z0,
+      height: zBottomRim - z0,
       center: [0, 0, centerZ],
       segments: BORE_SEGMENTS,
     }),
     cylinder({
       radius: innerRadius,
-      height: z1 - z0 + CUT_EPS,
+      height: zBottomRim - z0 + CUT_EPS,
       center: [0, 0, centerZ],
       segments: BORE_SEGMENTS,
     }),
   );
 
-  if (gap <= 0) {
-    return annulus;
+  const cuts: Geom3[] = [];
+
+  // Slice the rim on a plane tilted about X: z(y) = zMid - slope * y. The
+  // plane is anchored so the rim is exactly `topHeight` at the gap edges
+  // (y = outerRadius * cos(gap/2), the collar's actual top ends) and
+  // `bottomHeight` at the bottom-most point (y = -outerRadius).
+  const gapEdgeY = outerRadius * Math.cos(degToRad(gap / 2));
+  const slope = (bottomHeight - topHeight) / (gapEdgeY + outerRadius);
+  if (slope > 0) {
+    const zMid = wallDepth / 2 + topHeight + slope * gapEdgeY;
+    const big = outerRadius * 4;
+    cuts.push(
+      translate(
+        [0, 0, zMid],
+        rotateX(
+          -Math.atan(slope),
+          cuboid({ size: [big, big, big], center: [0, 0, big / 2] }),
+        ),
+      ),
+    );
   }
 
-  // Cut the top opening: a wedge centred on local +Y (up = opposite drain).
-  const half = degToRad(gap / 2);
-  const reach = outerRadius * 2;
-  const wedge = extrudeLinear(
-    { height: z1 - z0 + CUT_EPS * 2 },
-    polygon({
-      points: [
-        [0, 0],
-        [Math.sin(half) * reach, Math.cos(half) * reach],
-        [-Math.sin(half) * reach, Math.cos(half) * reach],
-      ],
-    }),
-  );
+  if (gap > 0) {
+    // Cut the top opening: a wedge centred on local +Y (up = opposite drain).
+    const half = degToRad(gap / 2);
+    const reach = outerRadius * 2;
+    cuts.push(
+      translate(
+        [0, 0, z0 - CUT_EPS],
+        extrudeLinear(
+          { height: zBottomRim - z0 + CUT_EPS * 2 },
+          polygon({
+            points: [
+              [0, 0],
+              [Math.sin(half) * reach, Math.cos(half) * reach],
+              [-Math.sin(half) * reach, Math.cos(half) * reach],
+            ],
+          }),
+        ),
+      ),
+    );
+  }
 
-  return subtract(annulus, translate([0, 0, z0 - CUT_EPS], wedge));
+  return cuts.length > 0 ? subtract(annulus, union(cuts)) : annulus;
 };
 
 // Stand-off duct on the INSIDE of the wall. The louvres stay the outermost

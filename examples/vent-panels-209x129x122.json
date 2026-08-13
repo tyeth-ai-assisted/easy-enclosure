@@ -89,7 +89,7 @@
       },
       "rainRing": {
         "enabled": true,
-        "height": 15,
+        "height": 22,
         "wallThickness": 2.5,
         "gapAngleDeg": 45
       },
@@ -110,7 +110,7 @@
       "meshThickness": 1.2,
       "rainRing": {
         "enabled": true,
-        "height": 15,
+        "height": 22,
         "wallThickness": 2.5,
         "gapAngleDeg": 45
       },

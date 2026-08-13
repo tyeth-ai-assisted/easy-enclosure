@@ -44,7 +44,11 @@ export type VentExtraScrewHole = {
 // vertical rain is already handled by the louvre slope.
 export type VentRainRing = {
   enabled: boolean;
-  // How far the collar stands out from the wall along the surface normal.
+  // Maximum standoff from the wall along the surface normal, reached at the
+  // collar's bottom-most point (the drain side). The rim is sliced on a
+  // tilted plane: at the top gap edges its height is derived from the louvre
+  // stack so it sits flush with the topmost slat's leading edge, then flares
+  // smoothly outward to this height at the bottom.
   height: number;
   wallThickness: number;
   // Angular width of the top opening, centred opposite the drain direction.
