@@ -1,14 +1,15 @@
 import { intersect, subtract, union } from '@jscad/modeling/src/operations/booleans';
+import { extrudeLinear } from '@jscad/modeling/src/operations/extrusions';
 import { hull } from '@jscad/modeling/src/operations/hulls';
 import { rotateX, transform, translate } from '@jscad/modeling/src/operations/transforms';
-import { cuboid, cylinder } from '@jscad/modeling/src/primitives';
+import { cuboid, cylinder, polygon } from '@jscad/modeling/src/primitives';
 import { degToRad } from '@jscad/modeling/src/utils';
 import * as mat4 from '@jscad/modeling/src/maths/mat4';
 
 import type { Geom3 } from '@jscad/modeling/src/geometries/types';
 import type { Mat4, Vec3 } from '@jscad/modeling/src/maths/types';
 
-import { Params, VentFanBox, VentPanel } from '../params';
+import { Params, VentFanBox, VentPanel, VentRainRing } from '../params';
 import { Surface } from '.';
 
 // How far parts embed into the surrounding wall so unions are watertight.
@@ -277,6 +278,65 @@ const meshGrille = (vent: VentPanel, wallDepth: number): Geom3 | null => {
   return intersect(union(bars), disc);
 };
 
+// C-shaped rain collar: a partial annulus standing outward from the wall
+// around the vent, wrapping the louvre stack's footprint. It blocks
+// wind-blown rain approaching from the sides or below, and is open at the
+// "top" - the direction opposite the resolved louvre drain direction (local
+// +Y in the canonical frame) - since top-down rain is already shed by the
+// louvre slope.
+const rainRing = (vent: VentPanel, ring: VentRainRing, wallDepth: number): Geom3 | null => {
+  const height = Math.max(1, ring.height);
+  const wallT = Math.max(0.8, ring.wallThickness);
+  const gap = Math.min(170, Math.max(0, ring.gapAngleDeg));
+  // Sit just outside the louvre stack, which is trimmed to the bore circle
+  // outside the wall.
+  const innerRadius = vent.diameter / 2 + 1;
+  const outerRadius = innerRadius + wallT;
+
+  if (vent.diameter <= 0) {
+    return null;
+  }
+
+  const z0 = wallDepth / 2 - EMBED;
+  const z1 = wallDepth / 2 + height;
+  const centerZ = (z0 + z1) / 2;
+
+  const annulus = subtract(
+    cylinder({
+      radius: outerRadius,
+      height: z1 - z0,
+      center: [0, 0, centerZ],
+      segments: BORE_SEGMENTS,
+    }),
+    cylinder({
+      radius: innerRadius,
+      height: z1 - z0 + CUT_EPS,
+      center: [0, 0, centerZ],
+      segments: BORE_SEGMENTS,
+    }),
+  );
+
+  if (gap <= 0) {
+    return annulus;
+  }
+
+  // Cut the top opening: a wedge centred on local +Y (up = opposite drain).
+  const half = degToRad(gap / 2);
+  const reach = outerRadius * 2;
+  const wedge = extrudeLinear(
+    { height: z1 - z0 + CUT_EPS * 2 },
+    polygon({
+      points: [
+        [0, 0],
+        [Math.sin(half) * reach, Math.cos(half) * reach],
+        [-Math.sin(half) * reach, Math.cos(half) * reach],
+      ],
+    }),
+  );
+
+  return subtract(annulus, translate([0, 0, z0 - CUT_EPS], wedge));
+};
+
 // Stand-off duct on the INSIDE of the wall. The louvres stay the outermost
 // weather barrier on the outer wall face; the fan box extends inward from
 // the wall and the fan mounts against the inner end plate, which carries the
@@ -447,6 +507,13 @@ export const ventPanelAdditions = (
       const box = fanBox(vent, vent.fanBox, frame.wallDepth);
       if (box) {
         parts.push(box);
+      }
+    }
+
+    if (vent.rainRing?.enabled) {
+      const collar = rainRing(vent, vent.rainRing, frame.wallDepth);
+      if (collar) {
+        parts.push(collar);
       }
     }
 

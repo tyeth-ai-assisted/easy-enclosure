@@ -8,8 +8,9 @@ import type {
   VentExtraScrewHole,
   VentFanBox,
   VentPanel,
+  VentRainRing,
 } from '../../core/params';
-import { DEFAULT_VENT_FAN_BOX } from '../../core/params';
+import { DEFAULT_VENT_FAN_BOX, DEFAULT_VENT_RAIN_RING } from '../../core/params';
 import { EnclosureStateService } from '../../core/state/enclosure-state.service';
 
 type Surface = 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back';
@@ -183,6 +184,20 @@ export class ParamsFormComponent {
       return;
     }
     this.updateVentPanel(index, { fanBox: { ...current.fanBox, ...patch } });
+  }
+
+  toggleVentRainRing(index: number, enabled: boolean): void {
+    this.updateVentPanel(index, {
+      rainRing: enabled ? { ...DEFAULT_VENT_RAIN_RING } : undefined,
+    });
+  }
+
+  updateVentRainRing(index: number, patch: Partial<VentRainRing>): void {
+    const current = this.params().ventPanels[index];
+    if (!current?.rainRing) {
+      return;
+    }
+    this.updateVentPanel(index, { rainRing: { ...current.rainRing, ...patch } });
   }
 
   addVentFanBoxScrewHole(index: number): void {

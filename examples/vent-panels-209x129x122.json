@@ -87,6 +87,12 @@
         "screwHoleDiameter": 4.4,
         "extraScrewHoles": []
       },
+      "rainRing": {
+        "enabled": true,
+        "height": 15,
+        "wallThickness": 2.5,
+        "gapAngleDeg": 45
+      },
       "extraScrewHoles": []
     },
     {
@@ -102,6 +108,12 @@
       "meshHoleSize": 4,
       "meshPitch": 6,
       "meshThickness": 1.2,
+      "rainRing": {
+        "enabled": true,
+        "height": 15,
+        "wallThickness": 2.5,
+        "gapAngleDeg": 45
+      },
       "extraScrewHoles": [
         {
           "angleDeg": 90,

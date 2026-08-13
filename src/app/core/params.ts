@@ -38,6 +38,19 @@ export type VentExtraScrewHole = {
   diameter: number;
 };
 
+// Partial-annulus standoff collar around the vent opening on the weather
+// side: blocks wind-blown rain approaching from the sides/below, with an
+// opening at the "top" (opposite the resolved louvre drain direction) since
+// vertical rain is already handled by the louvre slope.
+export type VentRainRing = {
+  enabled: boolean;
+  // How far the collar stands out from the wall along the surface normal.
+  height: number;
+  wallThickness: number;
+  // Angular width of the top opening, centred opposite the drain direction.
+  gapAngleDeg: number;
+};
+
 export type VentFanBox = {
   frameShape: 'square' | 'circle';
   frameSize: number;
@@ -73,9 +86,18 @@ export type VentPanel = {
   // Optional stand-off duct on the inside of the wall that carries the fan
   // on its inner mounting plate, behind the louvres (which stay outermost).
   fanBox?: VentFanBox;
+  // Optional C-shaped rain collar around the vent on the weather side.
+  rainRing?: VentRainRing;
   // Screw holes cut straight through the wall around the vent, for mounting a
   // fan flush against the inside of the wall when there is no fan box.
   extraScrewHoles: VentExtraScrewHole[];
+};
+
+export const DEFAULT_VENT_RAIN_RING: VentRainRing = {
+  enabled: true,
+  height: 15,
+  wallThickness: 2.5,
+  gapAngleDeg: 45,
 };
 
 export const DEFAULT_VENT_FAN_BOX: VentFanBox = {
