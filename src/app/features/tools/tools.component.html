@@ -11,10 +11,10 @@
   </app-action-button>
   <app-action-button
     variant="toolbar-primary"
-    [title]="'Export to STL'"
+    [title]="'Export to STL or STEP'"
     (click)="openExportModal()"
   >
-    STL
+    Export
   </app-action-button>
 
   <input #fileInput type="file" accept=".json" class="hidden" (change)="loadParamsFile($event)" />
@@ -38,6 +38,34 @@
     <p class="mx-auto mb-5 max-w-88 text-sm leading-relaxed text-slate-600">
       Export the full enclosure or only PCB mounts for quick fit checks.
     </p>
+    <fieldset class="mx-auto mb-5 flex items-center justify-center gap-5 text-sm text-slate-700">
+      <legend class="sr-only">Export format</legend>
+      <label class="flex cursor-pointer items-center gap-1.5">
+        <input
+          type="radio"
+          name="export-format"
+          value="stl"
+          class="accent-slate-900"
+          [checked]="exportFormat() === 'stl'"
+          (change)="setExportFormat('stl')"
+        />
+        STL
+      </label>
+      <label
+        class="flex cursor-pointer items-center gap-1.5"
+        title="Faceted STEP (ISO-10303-21) — curves are faceted exactly as in the STL export"
+      >
+        <input
+          type="radio"
+          name="export-format"
+          value="step"
+          class="accent-slate-900"
+          [checked]="exportFormat() === 'step'"
+          (change)="setExportFormat('step')"
+        />
+        STEP
+      </label>
+    </fieldset>
     <div class="flex flex-wrap items-center justify-center gap-2">
       <app-action-button variant="dialog" (click)="exportPcbMountsStl()">
         Export PCB Mounts

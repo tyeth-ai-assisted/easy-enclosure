@@ -8,10 +8,11 @@ import {
 } from '@angular/core';
 import type { Geom3 } from '@jscad/modeling/src/geometries/types';
 import { union } from '@jscad/modeling/src/operations/booleans';
-import { serialize } from '@jscad/stl-serializer';
+import { serialize as serializeStl } from '@jscad/stl-serializer';
 import { saveAs } from 'file-saver';
 
 import { base } from '../../core/enclosure/base';
+import { serialize as serializeStep } from '../../core/export/step-serializer';
 import { internalWalls } from '../../core/enclosure/internalwalls';
 import { lid } from '../../core/enclosure/lid';
 import { pcbMountsOnBase, pcbMountsOnLid } from '../../core/enclosure/pcbmount';
@@ -19,6 +20,8 @@ import { waterProofSeal } from '../../core/enclosure/waterproofseal';
 import type { Params } from '../../core/params';
 import { EnclosureStateService } from '../../core/state/enclosure-state.service';
 import { ActionButtonComponent } from '../../shared/action-button/action-button.component';
+
+export type ExportFormat = 'stl' | 'step';
 
 @Component({
   selector: 'app-tools',
@@ -36,6 +39,12 @@ export class ToolsComponent {
   private readonly state = inject(EnclosureStateService);
 
   readonly isExportModalOpen = signal(false);
+
+  readonly exportFormat = signal<ExportFormat>('stl');
+
+  setExportFormat(format: ExportFormat): void {
+    this.exportFormat.set(format);
+  }
 
   openFilePicker(): void {
     this.fileInput?.nativeElement.click();
@@ -134,7 +143,14 @@ export class ToolsComponent {
   }
 
   private exportGeometry(name: string, geometry: Geom3): void {
-    const rawData = serialize({ binary: false }, geometry);
+    if (this.exportFormat() === 'step') {
+      const rawData = serializeStep({ name }, geometry);
+      const blob = new Blob([rawData], { type: 'application/octet-stream' });
+      this.saveFile(blob, `${name}.step`);
+      return;
+    }
+
+    const rawData = serializeStl({ binary: false }, geometry);
     const blob = new Blob([rawData], { type: 'application/octet-stream' });
     this.saveFile(blob, `${name}.stl`);
   }
