@@ -156,7 +156,7 @@
               (change)="updateHole($index, { surface: $any($event.target).value })"
             >
               @for (surface of surfaces; track surface) {
-                <option [value]="surface">
+                <option [value]="surface" [selected]="surface === hole.surface">
                   {{ surfaceLabel(surface) }}
                 </option>
               }
@@ -245,7 +245,7 @@
               (change)="updatePcbMount($index, { surface: $any($event.target).value })"
             >
               @for (surface of surfaces; track surface) {
-                <option [value]="surface">
+                <option [value]="surface" [selected]="surface === (mount.surface || 'bottom')">
                   {{ surfaceLabel(surface) }}
                 </option>
               }
