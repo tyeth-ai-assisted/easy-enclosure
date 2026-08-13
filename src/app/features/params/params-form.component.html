@@ -551,18 +551,6 @@
 
           @if (vent.rainRing; as rainRing) {
             <div class="input-group">
-              <label>Collar Height (Bottom)</label>
-              <input
-                type="number"
-                min="1"
-                step="0.5"
-                [value]="rainRing.height"
-                (keydown.enter)="$any($event.target).blur()"
-                (blur)="updateVentRainRing(ventIndex, { height: +$any($event.target).value })"
-              />
-            </div>
-
-            <div class="input-group">
               <label>Collar Thickness</label>
               <input
                 type="number"

@@ -108,18 +108,33 @@ const ventFrame = (params: Params, vent: VentPanel): Frame => {
   }
 };
 
-// Transform from the vent's canonical frame (+Z = outward through the wall,
-// -Y = drain direction, origin = vent centre on the wall mid-plane) into
-// enclosure coordinates.
-const ventTransform = (frame: Frame, vent: VentPanel): Mat4 => {
+// Resolved world-space drain direction for a vent. Must lie in the wall
+// plane; if the user picked the vent's own surface (or its opposite) fall
+// back to something sensible.
+const resolveDrainDirection = (frame: Frame, vent: VentPanel): Vec3 => {
   let drain = directionTowards(vent.louvreDrainSurface);
-
-  // The drain direction must lie in the wall plane. If the user picked the
-  // vent's own surface (or its opposite) fall back to something sensible.
   if (Math.abs(dot(drain, frame.outward)) > 0.5) {
     drain =
       vent.surface === 'top' || vent.surface === 'bottom' ? directionTowards('back') : [0, 0, -1];
   }
+  return drain;
+};
+
+// Distance from the vent centre to the edge of its wall face, measured
+// along the drain direction (i.e. towards the collar's bottom). Used to
+// stop the rain collar's swept skirt from overhanging past the enclosure.
+const drainEdgeDistance = (params: Params, frame: Frame, drain: Vec3): number => {
+  const axisIndex = drain[0] !== 0 ? 0 : drain[1] !== 0 ? 1 : 2;
+  const axisMax = axisIndex === 0 ? params.width : axisIndex === 1 ? params.length : params.height;
+  const c = frame.center[axisIndex];
+  return drain[axisIndex] > 0 ? axisMax - c : c;
+};
+
+// Transform from the vent's canonical frame (+Z = outward through the wall,
+// -Y = drain direction, origin = vent centre on the wall mid-plane) into
+// enclosure coordinates.
+const ventTransform = (frame: Frame, vent: VentPanel): Mat4 => {
+  const drain = resolveDrainDirection(frame, vent);
 
   const zAxis = frame.outward;
   const yAxis = negate(drain);
@@ -290,20 +305,23 @@ const meshGrille = (vent: VentPanel, wallDepth: number): Geom3 | null => {
   return intersect(union(bars), disc);
 };
 
-// C-shaped rain collar: a partial annulus standing outward from the wall
-// around the vent, wrapping the louvre stack's footprint. It blocks
-// wind-blown rain approaching from the sides or below, and is open at the
-// "top" - the direction opposite the resolved louvre drain direction (local
-// +Y in the canonical frame) - since top-down rain is already shed by the
-// louvre slope.
-//
-// The rim is not a flat circle: like a pipe sliced at an angle, its outer
-// edge lies on a plane tilted about the local X axis. At the top (the gap
-// edges) the rim height equals the louvre blades' leading-edge protrusion,
-// so collar and topmost slat read as one continuous line; sweeping down
-// towards the drain side the collar flares progressively outward, reaching
-// `ring.height` (the maximum standoff) at the bottom-most point.
-const rainRing = (vent: VentPanel, ring: VentRainRing, wallDepth: number): Geom3 | null => {
+// C-shaped rain collar: a tube around the vent, rigidly rotated as a whole
+// by the louvre blade tilt about the local X axis (not a straight tube
+// sliced by an angled plane). Because the rotation is rigid, both rim
+// planes stay perpendicular to the tube's own axis and parallel to each
+// other, giving a parallelogram side profile, and the mouth (outer rim)
+// plane is anchored on the topmost louvre blade so collar rim and top slat
+// read as one continuous line from the side. Sweeping down towards the
+// drain side (local -Y) the collar naturally stands progressively further
+// out of the wall, blocking wind-blown rain from lateral and lower angles;
+// the top opening (gapAngleDeg, centred opposite the drain direction) plus
+// the louvres' own slope handle rain from above.
+const rainRing = (
+  vent: VentPanel,
+  ring: VentRainRing,
+  wallDepth: number,
+  drainLimit: number,
+): Geom3 | null => {
   const wallT = Math.max(0.8, ring.wallThickness);
   const gap = Math.min(170, Math.max(0, ring.gapAngleDeg));
   // Sit just outside the louvre stack, which is trimmed to the bore circle
@@ -315,63 +333,51 @@ const rainRing = (vent: VentPanel, ring: VentRainRing, wallDepth: number): Geom3
     return null;
   }
 
-  // Height at the top (gap edges): flush with the louvre blades' leading
-  // edges, which all lie on z = -wallDepth/2 + extent.
-  const topHeight = Math.max(1, louvreStack(vent).extent - wallDepth);
-  // Height at the bottom-most point (opposite the gap): the ring's height
-  // parameter, never less than the top so the collar only flares outward.
-  const bottomHeight = Math.max(ring.height, topHeight);
+  const { tilt, pitch, extent } = louvreStack(vent);
+  const sinT = Math.sin(tilt);
+  const cosT = Math.cos(tilt);
 
-  const z0 = wallDepth / 2 - EMBED;
-  const zBottomRim = wallDepth / 2 + bottomHeight;
-  const centerZ = (z0 + zBottomRim) / 2;
+  // The tube's axis after rotateX(-tilt) is u = (0, sin tilt, cos tilt).
+  // Anchor the mouth (outer rim) plane so it passes through the topmost
+  // blade's centre: at the default 45deg blade tilt the mouth plane is then
+  // exactly coplanar with that blade (rim normal == blade normal), so the
+  // rim continues the top slat's line.
+  const topBladeY = vent.diameter / 2 - pitch / 2;
+  const topBladeZ = -wallDepth / 2 + extent / 2;
+  const mouthOffset = topBladeY * sinT + topBladeZ * cosT;
 
-  const annulus = subtract(
+  // Long enough that every angular position of the tube reaches back into
+  // (and past) the wall before the trim below.
+  const length = mouthOffset + (outerRadius * sinT + wallDepth + EMBED) / cosT;
+  const axialCenter = mouthOffset - length / 2;
+
+  // Straight annulus swept along its own axis (+Z before rotation).
+  let tube = subtract(
     cylinder({
       radius: outerRadius,
-      height: zBottomRim - z0,
-      center: [0, 0, centerZ],
+      height: length,
+      center: [0, 0, axialCenter],
       segments: BORE_SEGMENTS,
     }),
     cylinder({
       radius: innerRadius,
-      height: zBottomRim - z0 + CUT_EPS,
-      center: [0, 0, centerZ],
+      height: length + CUT_EPS,
+      center: [0, 0, axialCenter],
       segments: BORE_SEGMENTS,
     }),
   );
 
-  const cuts: Geom3[] = [];
-
-  // Slice the rim on a plane tilted about X: z(y) = zMid - slope * y. The
-  // plane is anchored so the rim is exactly `topHeight` at the gap edges
-  // (y = outerRadius * cos(gap/2), the collar's actual top ends) and
-  // `bottomHeight` at the bottom-most point (y = -outerRadius).
-  const gapEdgeY = outerRadius * Math.cos(degToRad(gap / 2));
-  const slope = (bottomHeight - topHeight) / (gapEdgeY + outerRadius);
-  if (slope > 0) {
-    const zMid = wallDepth / 2 + topHeight + slope * gapEdgeY;
-    const big = outerRadius * 4;
-    cuts.push(
-      translate(
-        [0, 0, zMid],
-        rotateX(
-          -Math.atan(slope),
-          cuboid({ size: [big, big, big], center: [0, 0, big / 2] }),
-        ),
-      ),
-    );
-  }
-
+  // Cut the top opening in the tube's own frame (its +Y maps to the ring's
+  // top, opposite the drain direction, after rotation).
   if (gap > 0) {
-    // Cut the top opening: a wedge centred on local +Y (up = opposite drain).
     const half = degToRad(gap / 2);
     const reach = outerRadius * 2;
-    cuts.push(
+    tube = subtract(
+      tube,
       translate(
-        [0, 0, z0 - CUT_EPS],
+        [0, 0, mouthOffset - length - CUT_EPS],
         extrudeLinear(
-          { height: zBottomRim - z0 + CUT_EPS * 2 },
+          { height: length + CUT_EPS * 2 },
           polygon({
             points: [
               [0, 0],
@@ -384,7 +390,25 @@ const rainRing = (vent: VentPanel, ring: VentRainRing, wallDepth: number): Geom3
     );
   }
 
-  return cuts.length > 0 ? subtract(annulus, union(cuts)) : annulus;
+  // One rigid rotation of the whole solid by the blade tilt.
+  const collar = rotateX(-tilt, tube);
+
+  // Trim whatever pokes back through the wall into the enclosure (keep only
+  // material from just inside the outer wall face outward), and clip the
+  // swept skirt at the wall face's edge on the drain side so the collar
+  // never overhangs past the enclosure.
+  const keep = (length + outerRadius * 2) * 2;
+  return intersect(
+    collar,
+    cuboid({
+      size: [keep, keep, keep],
+      center: [0, 0, wallDepth / 2 - EMBED + keep / 2],
+    }),
+    cuboid({
+      size: [keep, keep, keep],
+      center: [0, -drainLimit + keep / 2, 0],
+    }),
+  );
 };
 
 // Stand-off duct on the INSIDE of the wall. The louvres stay the outermost
@@ -561,7 +585,13 @@ export const ventPanelAdditions = (
     }
 
     if (vent.rainRing?.enabled) {
-      const collar = rainRing(vent, vent.rainRing, frame.wallDepth);
+      const drain = resolveDrainDirection(frame, vent);
+      const collar = rainRing(
+        vent,
+        vent.rainRing,
+        frame.wallDepth,
+        drainEdgeDistance(params, frame, drain),
+      );
       if (collar) {
         parts.push(collar);
       }

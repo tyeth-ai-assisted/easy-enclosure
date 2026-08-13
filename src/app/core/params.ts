@@ -44,12 +44,6 @@ export type VentExtraScrewHole = {
 // vertical rain is already handled by the louvre slope.
 export type VentRainRing = {
   enabled: boolean;
-  // Maximum standoff from the wall along the surface normal, reached at the
-  // collar's bottom-most point (the drain side). The rim is sliced on a
-  // tilted plane: at the top gap edges its height is derived from the louvre
-  // stack so it sits flush with the topmost slat's leading edge, then flares
-  // smoothly outward to this height at the bottom.
-  height: number;
   wallThickness: number;
   // Angular width of the top opening, centred opposite the drain direction.
   gapAngleDeg: number;
@@ -99,7 +93,6 @@ export type VentPanel = {
 
 export const DEFAULT_VENT_RAIN_RING: VentRainRing = {
   enabled: true,
-  height: 15,
   wallThickness: 2.5,
   gapAngleDeg: 45,
 };
