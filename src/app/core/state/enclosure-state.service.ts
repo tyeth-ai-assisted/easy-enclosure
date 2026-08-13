@@ -43,6 +43,7 @@ export class EnclosureStateService {
       holes: [],
       pcbMounts: [],
       internalWalls: [],
+      ventPanels: [],
       waterProof: false,
       wallMounts: false,
       lidScrews: false,

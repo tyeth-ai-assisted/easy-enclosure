@@ -2,6 +2,7 @@ import { booleans } from '@jscad/modeling';
 import { Params } from '../params';
 
 import { holes } from './holes';
+import { ventPanelAdditions, ventPanelCutouts } from './ventpanel';
 import { flanges } from './wallmount';
 import { clover, hollowRoundCube, roundedCube } from './utils';
 import { waterProofSealCutout } from './waterproofseal';
@@ -70,9 +71,19 @@ export const base = (params: Params) => {
     subtracts.push(holes(params));
   }
 
-  if (subtracts.length > 0) {
-    return subtract(union(body), union(subtracts));
-  } else {
-    return union(body);
+  const ventCutouts = ventPanelCutouts(params);
+  if (ventCutouts) {
+    subtracts.push(ventCutouts);
   }
+
+  let result = subtracts.length > 0 ? subtract(union(body), union(subtracts)) : union(body);
+
+  // Vent panel additions (louvres, mesh, fan boxes) span the vent openings,
+  // so they must be unioned in after the cutouts have been subtracted.
+  const ventAdditions = ventPanelAdditions(params);
+  if (ventAdditions) {
+    result = union(result, ventAdditions);
+  }
+
+  return result;
 };

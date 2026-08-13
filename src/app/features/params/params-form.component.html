@@ -384,6 +384,385 @@
     </div>
   </div>
 
+  <div class="accordian" [class.active]="activeTab() === 10">
+    <p class="accordian-header" (click)="setActiveTab(10)">
+      Vent Panels
+      <span class="accordian-icon">{{ activeTab() === 10 ? '-' : '+' }}</span>
+    </p>
+    <div class="accordian-body">
+      @for (vent of params().ventPanels; track $index; let ventIndex = $index) {
+        <div class="sub-params">
+          <button class="remove-btn" type="button" (click)="removeVentPanel(ventIndex)">X</button>
+          <p>
+            <b>Vent Panel {{ ventIndex + 1 }}</b>
+          </p>
+
+          <div class="input-group">
+            <label>Surface</label>
+            <select
+              [value]="vent.surface"
+              (change)="updateVentPanel(ventIndex, { surface: $any($event.target).value })"
+            >
+              @for (surface of surfaces; track surface) {
+                <option [value]="surface" [selected]="surface === vent.surface">
+                  {{ surfaceLabel(surface) }}
+                </option>
+              }
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label>X</label>
+            <input
+              type="number"
+              [value]="vent.x"
+              (keydown.enter)="$any($event.target).blur()"
+              (blur)="updateVentPanel(ventIndex, { x: +$any($event.target).value })"
+            />
+          </div>
+
+          <div class="input-group">
+            <label>Y</label>
+            <input
+              type="number"
+              [value]="vent.y"
+              (keydown.enter)="$any($event.target).blur()"
+              (blur)="updateVentPanel(ventIndex, { y: +$any($event.target).value })"
+            />
+          </div>
+
+          <div class="input-group">
+            <label>Vent Diameter</label>
+            <input
+              type="number"
+              min="1"
+              [value]="vent.diameter"
+              (keydown.enter)="$any($event.target).blur()"
+              (blur)="updateVentPanel(ventIndex, { diameter: +$any($event.target).value })"
+            />
+          </div>
+
+          <div class="input-group">
+            <label>Louvre Count</label>
+            <input
+              type="number"
+              min="2"
+              step="1"
+              [value]="vent.louvreCount"
+              (keydown.enter)="$any($event.target).blur()"
+              (blur)="updateVentPanel(ventIndex, { louvreCount: +$any($event.target).value })"
+            />
+          </div>
+
+          <div class="input-group">
+            <label>Louvre Angle</label>
+            <input
+              type="number"
+              min="15"
+              max="75"
+              step="1"
+              [value]="vent.louvreAngle"
+              (keydown.enter)="$any($event.target).blur()"
+              (blur)="updateVentPanel(ventIndex, { louvreAngle: +$any($event.target).value })"
+            />
+          </div>
+
+          <div class="input-group">
+            <label>Louvre Thickness</label>
+            <input
+              type="number"
+              min="0.4"
+              step="0.1"
+              [value]="vent.louvreThickness"
+              (keydown.enter)="$any($event.target).blur()"
+              (blur)="updateVentPanel(ventIndex, { louvreThickness: +$any($event.target).value })"
+            />
+          </div>
+
+          <div class="input-group">
+            <label>Drain Towards Surface</label>
+            <select
+              [value]="vent.louvreDrainSurface"
+              (change)="updateVentPanel(ventIndex, { louvreDrainSurface: $any($event.target).value })"
+            >
+              @for (surface of surfaces; track surface) {
+                <option [value]="surface" [selected]="surface === vent.louvreDrainSurface">
+                  {{ surfaceLabel(surface) }}
+                </option>
+              }
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label>Mesh Panel</label>
+            <input
+              type="checkbox"
+              [checked]="vent.meshPanel"
+              (change)="updateVentPanel(ventIndex, { meshPanel: $any($event.target).checked })"
+            />
+          </div>
+
+          @if (vent.meshPanel) {
+            <div class="input-group">
+              <label>Mesh Opening Size</label>
+              <input
+                type="number"
+                min="1"
+                step="0.5"
+                [value]="vent.meshHoleSize"
+                (keydown.enter)="$any($event.target).blur()"
+                (blur)="updateVentPanel(ventIndex, { meshHoleSize: +$any($event.target).value })"
+              />
+            </div>
+
+            <div class="input-group">
+              <label>Mesh Pitch</label>
+              <input
+                type="number"
+                min="2"
+                step="0.5"
+                [value]="vent.meshPitch"
+                (keydown.enter)="$any($event.target).blur()"
+                (blur)="updateVentPanel(ventIndex, { meshPitch: +$any($event.target).value })"
+              />
+            </div>
+
+            <div class="input-group">
+              <label>Mesh Thickness</label>
+              <input
+                type="number"
+                min="0.6"
+                step="0.1"
+                [value]="vent.meshThickness"
+                (keydown.enter)="$any($event.target).blur()"
+                (blur)="updateVentPanel(ventIndex, { meshThickness: +$any($event.target).value })"
+              />
+            </div>
+          }
+
+          <div class="input-group">
+            <label>Fan Box</label>
+            <input
+              type="checkbox"
+              [checked]="!!vent.fanBox"
+              (change)="toggleVentFanBox(ventIndex, $any($event.target).checked)"
+            />
+          </div>
+
+          @if (vent.fanBox; as fanBox) {
+            <div class="input-group">
+              <label>Frame Shape</label>
+              <select
+                [value]="fanBox.frameShape"
+                (change)="updateVentFanBox(ventIndex, { frameShape: $any($event.target).value })"
+              >
+                <option value="square" [selected]="fanBox.frameShape === 'square'">Square</option>
+                <option value="circle" [selected]="fanBox.frameShape === 'circle'">Circle</option>
+              </select>
+            </div>
+
+            <div class="input-group">
+              <label>Frame Size</label>
+              <input
+                type="number"
+                min="1"
+                [value]="fanBox.frameSize"
+                (keydown.enter)="$any($event.target).blur()"
+                (blur)="updateVentFanBox(ventIndex, { frameSize: +$any($event.target).value })"
+              />
+            </div>
+
+            <div class="input-group">
+              <label>Box Depth</label>
+              <input
+                type="number"
+                min="2"
+                [value]="fanBox.depth"
+                (keydown.enter)="$any($event.target).blur()"
+                (blur)="updateVentFanBox(ventIndex, { depth: +$any($event.target).value })"
+              />
+            </div>
+
+            <div class="input-group">
+              <label>Box Wall Thickness</label>
+              <input
+                type="number"
+                min="0.8"
+                step="0.1"
+                [value]="fanBox.wallThickness"
+                (keydown.enter)="$any($event.target).blur()"
+                (blur)="updateVentFanBox(ventIndex, { wallThickness: +$any($event.target).value })"
+              />
+            </div>
+
+            @if (fanBox.frameShape === 'square') {
+              <div class="input-group">
+                <label>Screw Hole Inset</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  [value]="fanBox.screwHoleInset"
+                  (keydown.enter)="$any($event.target).blur()"
+                  (blur)="updateVentFanBox(ventIndex, { screwHoleInset: +$any($event.target).value })"
+                />
+              </div>
+
+              <div class="input-group">
+                <label>Screw Hole Diameter</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  [value]="fanBox.screwHoleDiameter"
+                  (keydown.enter)="$any($event.target).blur()"
+                  (blur)="
+                    updateVentFanBox(ventIndex, { screwHoleDiameter: +$any($event.target).value })
+                  "
+                />
+              </div>
+            }
+
+            @if (fanBox.frameShape === 'circle') {
+              @for (screwHole of fanBox.extraScrewHoles; track $index; let holeIndex = $index) {
+                <div class="sub-params">
+                  <button
+                    class="remove-btn"
+                    type="button"
+                    (click)="removeVentFanBoxScrewHole(ventIndex, holeIndex)"
+                  >
+                    X
+                  </button>
+                  <p>
+                    <b>Fan Screw Hole {{ holeIndex + 1 }}</b>
+                  </p>
+
+                  <div class="input-group">
+                    <label>Angle (deg)</label>
+                    <input
+                      type="number"
+                      step="1"
+                      [value]="screwHole.angleDeg"
+                      (keydown.enter)="$any($event.target).blur()"
+                      (blur)="
+                        updateVentFanBoxScrewHole(ventIndex, holeIndex, {
+                          angleDeg: +$any($event.target).value,
+                        })
+                      "
+                    />
+                  </div>
+
+                  <div class="input-group">
+                    <label>Radius</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.1"
+                      [value]="screwHole.radius"
+                      (keydown.enter)="$any($event.target).blur()"
+                      (blur)="
+                        updateVentFanBoxScrewHole(ventIndex, holeIndex, {
+                          radius: +$any($event.target).value,
+                        })
+                      "
+                    />
+                  </div>
+
+                  <div class="input-group">
+                    <label>Diameter</label>
+                    <input
+                      type="number"
+                      min="0.5"
+                      step="0.1"
+                      [value]="screwHole.diameter"
+                      (keydown.enter)="$any($event.target).blur()"
+                      (blur)="
+                        updateVentFanBoxScrewHole(ventIndex, holeIndex, {
+                          diameter: +$any($event.target).value,
+                        })
+                      "
+                    />
+                  </div>
+                </div>
+              }
+              <button type="button" class="add-btn" (click)="addVentFanBoxScrewHole(ventIndex)">
+                ADD FAN SCREW HOLE
+              </button>
+            }
+          }
+
+          @if (!vent.fanBox) {
+            @for (screwHole of vent.extraScrewHoles; track $index; let holeIndex = $index) {
+              <div class="sub-params">
+                <button
+                  class="remove-btn"
+                  type="button"
+                  (click)="removeVentWallScrewHole(ventIndex, holeIndex)"
+                >
+                  X
+                </button>
+                <p>
+                  <b>Wall Screw Hole {{ holeIndex + 1 }}</b>
+                </p>
+
+                <div class="input-group">
+                  <label>Angle (deg)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    [value]="screwHole.angleDeg"
+                    (keydown.enter)="$any($event.target).blur()"
+                    (blur)="
+                      updateVentWallScrewHole(ventIndex, holeIndex, {
+                        angleDeg: +$any($event.target).value,
+                      })
+                    "
+                  />
+                </div>
+
+                <div class="input-group">
+                  <label>Radius</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.1"
+                    [value]="screwHole.radius"
+                    (keydown.enter)="$any($event.target).blur()"
+                    (blur)="
+                      updateVentWallScrewHole(ventIndex, holeIndex, {
+                        radius: +$any($event.target).value,
+                      })
+                    "
+                  />
+                </div>
+
+                <div class="input-group">
+                  <label>Diameter</label>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.1"
+                    [value]="screwHole.diameter"
+                    (keydown.enter)="$any($event.target).blur()"
+                    (blur)="
+                      updateVentWallScrewHole(ventIndex, holeIndex, {
+                        diameter: +$any($event.target).value,
+                      })
+                    "
+                  />
+                </div>
+              </div>
+            }
+            <button type="button" class="add-btn" (click)="addVentWallScrewHole(ventIndex)">
+              ADD WALL SCREW HOLE
+            </button>
+          }
+        </div>
+      }
+      <button type="button" class="add-btn" (click)="addVentPanel()">ADD NEW VENT PANEL</button>
+    </div>
+  </div>
+
   <div class="accordian" [class.active]="activeTab() === 6">
     <p class="accordian-header" (click)="setActiveTab(6)">
       Waterproofing

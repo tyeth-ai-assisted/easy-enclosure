@@ -28,6 +28,65 @@ export type InternalWall = {
   rotation: number;
 };
 
+// A single screw hole positioned in polar coordinates around a vent centre.
+// angleDeg is measured in the vent's local plane: 0 deg points towards the
+// panel's local +X, 90 deg points away from the drain direction ("up" when
+// draining towards the bottom).
+export type VentExtraScrewHole = {
+  angleDeg: number;
+  radius: number;
+  diameter: number;
+};
+
+export type VentFanBox = {
+  frameShape: 'square' | 'circle';
+  frameSize: number;
+  depth: number;
+  wallThickness: number;
+  // Square axial fans: 4 corner holes inset from the frame edge.
+  screwHoleInset: number;
+  screwHoleDiameter: number;
+  // Circular (blower) fans: irregular mounting ears outside the frame radius.
+  extraScrewHoles: VentExtraScrewHole[];
+};
+
+export type VentPanel = {
+  surface: Surface;
+  x: number;
+  y: number;
+  // Clear airflow bore through the wall (normally somewhat smaller than the
+  // fan's outer frame size).
+  diameter: number;
+  louvreCount: number;
+  // Blade angle in degrees measured from the wall plane (45 = classic rain
+  // louvre, smaller = flatter/more closed, larger = more open).
+  louvreAngle: number;
+  louvreThickness: number;
+  // Which enclosure surface the louvre blades slope towards, i.e. the "low"
+  // edge water runs off towards.
+  louvreDrainSurface: Surface;
+  meshPanel: boolean;
+  // Square grille openings of meshHoleSize, spaced meshPitch apart.
+  meshHoleSize: number;
+  meshPitch: number;
+  meshThickness: number;
+  // Optional stand-off box on the outside of the wall that carries the fan.
+  fanBox?: VentFanBox;
+  // Screw holes cut straight through the wall around the vent, for mounting a
+  // fan flush against the inside of the wall when there is no fan box.
+  extraScrewHoles: VentExtraScrewHole[];
+};
+
+export const DEFAULT_VENT_FAN_BOX: VentFanBox = {
+  frameShape: 'square',
+  frameSize: 120,
+  depth: 30,
+  wallThickness: 2.5,
+  screwHoleInset: 7.5,
+  screwHoleDiameter: 4.4,
+  extraScrewHoles: [],
+};
+
 export type Params = {
   length: number;
   width: number;
@@ -48,6 +107,7 @@ export type Params = {
   holes: Hole[];
   pcbMounts: PCBMount[];
   internalWalls: InternalWall[];
+  ventPanels: VentPanel[];
   wallMounts: boolean;
   wallMountCount: number;
   wallMountScrewDiameter: number;
@@ -164,6 +224,7 @@ export const DEFAULT_PARAMS: Params = {
       rotation: 0,
     },
   ],
+  ventPanels: [],
   wallMounts: true,
   wallMountCount: 4,
   wallMountScrewDiameter: 3.98,
