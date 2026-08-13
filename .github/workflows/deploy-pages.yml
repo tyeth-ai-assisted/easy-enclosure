@@ -34,10 +34,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Configure git identity for gh-pages publish
+      - name: Configure git identity and auth for gh-pages publish
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # gh-pages clones origin into its own cache dir, which does not inherit the
+          # credentials actions/checkout wires up for the working tree, so the token
+          # needs to be embedded directly in the remote URL it will clone/push.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
 
       - name: Build and deploy to GitHub Pages
         run: npm run deploy
