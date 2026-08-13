@@ -277,10 +277,12 @@ const meshGrille = (vent: VentPanel, wallDepth: number): Geom3 | null => {
   return intersect(union(bars), disc);
 };
 
-// Stand-off duct on the outside of the wall. The fan mounts against the
-// outer end plate, which carries the airflow opening and the fan's screw
-// pattern. Returned geometry already has its openings subtracted, so it must
-// be unioned into the body AFTER the wall cutouts have been applied.
+// Stand-off duct on the INSIDE of the wall. The louvres stay the outermost
+// weather barrier on the outer wall face; the fan box extends inward from
+// the wall and the fan mounts against the inner end plate, which carries the
+// airflow opening and the fan's screw pattern. Returned geometry already has
+// its openings subtracted, so it must be unioned into the body AFTER the
+// wall cutouts have been applied.
 const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | null => {
   const size = box.frameSize;
   const wallT = Math.max(0.8, box.wallThickness);
@@ -291,14 +293,17 @@ const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | nu
     return null;
   }
 
-  const z0 = wallDepth / 2 - EMBED;
-  const z1 = wallDepth / 2 + depth;
+  // Canonical frame: +Z is outward. The duct spans from the inner wall face
+  // (embedded 1mm into the wall for a solid union) down to -depth inside the
+  // enclosure, with the fan mounting plate at the inner end (lowest z).
+  const z1 = -wallDepth / 2 + EMBED;
+  const z0 = -wallDepth / 2 - depth;
   const outerHeight = z1 - z0;
   const outerCenterZ = (z0 + z1) / 2;
-  const cavityHeight = z1 - plateT - z0 + CUT_EPS;
-  const cavityCenterZ = (z0 - CUT_EPS + (z1 - plateT)) / 2;
+  const cavityHeight = z1 + CUT_EPS - (z0 + plateT);
+  const cavityCenterZ = (z0 + plateT + z1 + CUT_EPS) / 2;
   const plateCutHeight = plateT + CUT_EPS * 2;
-  const plateCutCenterZ = z1 - plateT / 2;
+  const plateCutCenterZ = z0 + plateT / 2;
 
   const solids: Geom3[] = [];
   const cuts: Geom3[] = [];
@@ -368,7 +373,7 @@ const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | nu
         cylinder({
           radius: padRadius,
           height: plateT,
-          center: [dir[0] * r, dir[1] * r, z1 - plateT / 2],
+          center: [dir[0] * r, dir[1] * r, z0 + plateT / 2],
           segments: SCREW_SEGMENTS,
         });
       solids.push(hull(pad(anchorRadius), pad(hole.radius)));

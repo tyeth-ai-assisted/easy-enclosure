@@ -70,7 +70,8 @@ export type VentPanel = {
   meshHoleSize: number;
   meshPitch: number;
   meshThickness: number;
-  // Optional stand-off box on the outside of the wall that carries the fan.
+  // Optional stand-off duct on the inside of the wall that carries the fan
+  // on its inner mounting plate, behind the louvres (which stay outermost).
   fanBox?: VentFanBox;
   // Screw holes cut straight through the wall around the vent, for mounting a
   // fan flush against the inside of the wall when there is no fan box.
