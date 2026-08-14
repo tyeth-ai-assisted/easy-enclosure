@@ -273,6 +273,24 @@ const louvreStack = (vent: VentPanel) => {
   return { count, thickness, tilt, pitch, chord, extent };
 };
 
+// y-centre of an end blade seated so its TOP surface passes exactly through
+// the bore's top or bottom edge (edgeSign = +1 / -1) at the OUTER wall face.
+// The regular blade grid leaves both extremes short of the bore edge on the
+// weather face: the bottom by most of a pitch (a wide visible slit) and the
+// top by a fraction of a millimetre (a thin open crescent around the bore's
+// top edge). The bottom instance is the drip sill; the top instance is the
+// cap blade, which becomes the true topmost blade that the rain collar
+// aligns to (rainRingFrame / topBladePlaneCut derive from this same helper,
+// so the collar and the cap can never drift apart).
+const louvreEndBladeY = (vent: VentPanel, wallDepth: number, edgeSign: 1 | -1): number => {
+  const { thickness, tilt, extent } = louvreStack(vent);
+  const sinT = Math.sin(tilt);
+  const cosT = Math.cos(tilt);
+  const bladeCenterZ = -wallDepth / 2 + extent / 2;
+  const tAtWallFace = (wallDepth / 2 - bladeCenterZ - (thickness / 2) * sinT) / cosT;
+  return (edgeSign * vent.diameter) / 2 - (thickness / 2) * cosT + tAtWallFace * sinT;
+};
+
 // Shared placement of the rain collar in the vent's canonical frame, used by
 // BOTH rainRing() (to build the collar) and louvres() (to clip the blades to
 // the collar's inner wall) so the two can never drift apart. The collar is a
@@ -285,7 +303,7 @@ export const rainRingFrame = (vent: VentPanel, ring: VentRainRing, wallDepth: nu
   const innerRadius = vent.diameter / 2 + RAIN_RING_CLEARANCE;
   const outerRadius = innerRadius + wallT;
 
-  const { tilt, thickness, pitch, chord } = louvreStack(vent);
+  const { tilt, thickness, chord } = louvreStack(vent);
   const sinT = Math.sin(tilt);
   const cosT = Math.cos(tilt);
   const gapHalf = degToRad(gap / 2);
@@ -301,7 +319,9 @@ export const rainRingFrame = (vent: VentPanel, ring: VentRainRing, wallDepth: nu
   // instead sits tangent to the plane at the outer radius, as before.
   const span = chord * cosT;
   const zStart = -wallDepth / 2 + thickness * sinT;
-  const topBladeY = vent.diameter / 2 - pitch / 2;
+  // The true topmost blade is the cap blade (seated on the bore's top edge
+  // at the outer wall face), not the last grid blade.
+  const topBladeY = louvreEndBladeY(vent, wallDepth, 1);
   const trailingCornerY = topBladeY + (thickness / 2) * cosT + (chord / 2) * sinT;
   const seatRadius = gap > 0 ? innerRadius : outerRadius;
   const yOffset = trailingCornerY - seatRadius * Math.cos(gapHalf);
@@ -319,8 +339,8 @@ export const rainRingFrame = (vent: VentPanel, ring: VentRainRing, wallDepth: nu
 // opening edge is exactly coincident with the blade's face plane by
 // construction, for any vent/blade parameter combination.
 export const topBladePlaneCut = (vent: VentPanel, wallDepth: number): Geom3 => {
-  const { count, thickness, tilt, pitch, chord, extent } = louvreStack(vent);
-  const topBladeY = -vent.diameter / 2 + pitch * (count - 0.5);
+  const { thickness, tilt, chord, extent } = louvreStack(vent);
+  const topBladeY = louvreEndBladeY(vent, wallDepth, 1);
   const bladeCenterZ = -wallDepth / 2 + extent / 2;
   const reach = (vent.diameter + chord + wallDepth) * 4;
   return translate(
@@ -378,26 +398,24 @@ export const louvres = (vent: VentPanel, wallDepth: number, drainLimit: number):
     );
   }
 
-  // Sill blade: the regular grid places blade centres from -bore/2 + pitch/2
-  // upwards, so the lowest blade's TOP surface crosses the outer wall face
-  // well above the bore's bottom edge, leaving a see-through slit between
-  // the bore's bottom lip and the underside of the first blade. Seat one
-  // extra blade so its top surface passes exactly through the bore's bottom
-  // edge at the outer wall face: the wall lip and the sill then act as a
-  // standard louvre pair and the bottom of the stack gets the same
-  // line-of-sight protection as every interior pair. (The top needs no
-  // counterpart: the topmost blade's top surface already crosses the outer
-  // wall face just below the bore's top lip, which the wall itself closes.)
-  const sinT = Math.sin(tilt);
-  const cosT = Math.cos(tilt);
-  const tAtWallFace = (wallDepth / 2 - bladeCenterZ - (thickness / 2) * sinT) / cosT;
-  const sillY = -bore / 2 - (thickness / 2) * cosT + tAtWallFace * sinT;
-  blades.push(
-    translate(
-      [0, sillY, bladeCenterZ],
-      rotateX(tilt, cuboid({ size: [bladeLength, thickness, chord] })),
-    ),
-  );
+  // End blades: the regular grid leaves both extremes of the stack short of
+  // the bore edge ON THE OUTER WALL FACE - the bottom by most of a pitch (a
+  // wide visible slit under the first blade) and the top by a fraction of a
+  // millimetre (a thin open crescent over the last blade). Seat one extra
+  // blade at each end so its top surface passes exactly through the bore's
+  // bottom / top edge at the outer wall face: the bottom one is a drip sill
+  // (wall lip + sill act as a standard louvre pair), the top one is a cap
+  // blade that closes the bore's top edge flush and becomes the true topmost
+  // blade the rain collar aligns to (it typically merges with the grid's
+  // last blade into one slightly thicker slat).
+  for (const edgeSign of [-1, 1] as const) {
+    blades.push(
+      translate(
+        [0, louvreEndBladeY(vent, wallDepth, edgeSign), bladeCenterZ],
+        rotateX(tilt, cuboid({ size: [bladeLength, thickness, chord] })),
+      ),
+    );
+  }
 
   // Trim the blade stack: inside the wall thickness the blades may embed
   // LOUVRE_RIM_EMBED into the wall around the bore (so they fuse with it);
