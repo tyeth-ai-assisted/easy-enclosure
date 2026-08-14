@@ -305,17 +305,16 @@ const meshGrille = (vent: VentPanel, wallDepth: number): Geom3 | null => {
   return intersect(union(bars), disc);
 };
 
-// C-shaped rain collar: a tube around the vent, rigidly rotated as a whole
-// by the louvre blade tilt about the local X axis (not a straight tube
-// sliced by an angled plane). Because the rotation is rigid, both rim
-// planes stay perpendicular to the tube's own axis and parallel to each
-// other, giving a parallelogram side profile, and the mouth (outer rim)
-// plane is anchored on the topmost louvre blade so collar rim and top slat
-// read as one continuous line from the side. Sweeping down towards the
-// drain side (local -Y) the collar naturally stands progressively further
-// out of the wall, blocking wind-blown rain from lateral and lower angles;
-// the top opening (gapAngleDeg, centred opposite the drain direction) plus
-// the louvres' own slope handle rain from above.
+// C-shaped rain collar: a straight tube around the vent that is SHEARED
+// (not rotated) towards the drain side. The shear maps (x, y, z) to
+// (x, y - z * tan(tilt), z): every cross-sectional slice keeps the exact
+// circular ring shape of the straight tube and both end caps stay flat and
+// parallel to the wall, while the tube's walls lean at the same angle as
+// the louvre blades - a parallelogram side profile with no ballooning.
+// The tube spans the same z-range as the louvre stack (inner wall face to
+// the blades' leading-edge plane) with the same shear rate, so at the top
+// of the ring (by the gap) the collar's edge runs along the topmost blade,
+// reading as one continuous line from the side.
 const rainRing = (
   vent: VentPanel,
   ring: VentRainRing,
@@ -333,49 +332,36 @@ const rainRing = (
     return null;
   }
 
-  const { tilt, pitch, extent } = louvreStack(vent);
-  const sinT = Math.sin(tilt);
-  const cosT = Math.cos(tilt);
+  const { tilt, extent } = louvreStack(vent);
+  // Same z-extent as the louvre stack: near cap at the blades' inner edges,
+  // far cap at their leading edges.
+  const length = extent;
 
-  // The tube's axis after rotateX(-tilt) is u = (0, sin tilt, cos tilt).
-  // Anchor the mouth (outer rim) plane so it passes through the topmost
-  // blade's centre: at the default 45deg blade tilt the mouth plane is then
-  // exactly coplanar with that blade (rim normal == blade normal), so the
-  // rim continues the top slat's line.
-  const topBladeY = vent.diameter / 2 - pitch / 2;
-  const topBladeZ = -wallDepth / 2 + extent / 2;
-  const mouthOffset = topBladeY * sinT + topBladeZ * cosT;
-
-  // Long enough that every angular position of the tube reaches back into
-  // (and past) the wall before the trim below.
-  const length = mouthOffset + (outerRadius * sinT + wallDepth + EMBED) / cosT;
-  const axialCenter = mouthOffset - length / 2;
-
-  // Straight annulus swept along its own axis (+Z before rotation).
+  // Straight annulus along +Z, near cap at z = 0.
   let tube = subtract(
     cylinder({
       radius: outerRadius,
       height: length,
-      center: [0, 0, axialCenter],
+      center: [0, 0, length / 2],
       segments: BORE_SEGMENTS,
     }),
     cylinder({
       radius: innerRadius,
       height: length + CUT_EPS,
-      center: [0, 0, axialCenter],
+      center: [0, 0, length / 2],
       segments: BORE_SEGMENTS,
     }),
   );
 
-  // Cut the top opening in the tube's own frame (its +Y maps to the ring's
-  // top, opposite the drain direction, after rotation).
+  // Cut the top opening in the unsheared frame (the shear is linear, so the
+  // wedge composes correctly and stays centred opposite the drain).
   if (gap > 0) {
     const half = degToRad(gap / 2);
     const reach = outerRadius * 2;
     tube = subtract(
       tube,
       translate(
-        [0, 0, mouthOffset - length - CUT_EPS],
+        [0, 0, -CUT_EPS],
         extrudeLinear(
           { height: length + CUT_EPS * 2 },
           polygon({
@@ -390,20 +376,22 @@ const rainRing = (
     );
   }
 
-  // One rigid rotation of the whole solid by the blade tilt.
-  const collar = rotateX(-tilt, tube);
+  // Shear towards the drain side (-Y as z increases), matching the blades'
+  // own lean. Column-major mat4: y' = y - tan(tilt) * z.
+  const sheared = transform(
+    mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, -Math.tan(tilt), 1, 0, 0, 0, 0, 1),
+    tube,
+  );
 
-  // Trim whatever pokes back through the wall into the enclosure (keep only
-  // material from just inside the outer wall face outward), and clip the
-  // swept skirt at the wall face's edge on the drain side so the collar
-  // never overhangs past the enclosure.
-  const keep = (length + outerRadius * 2) * 2;
+  // Near cap sits on the inner wall face (fully embedded through the wall),
+  // far cap lands on the louvre leading-edge plane.
+  const collar = translate([0, 0, -wallDepth / 2], sheared);
+
+  // Clip at the wall face's edge on the drain side, in case the sheared
+  // mouth would overhang past the enclosure.
+  const keep = (length + outerRadius * 2) * 4;
   return intersect(
     collar,
-    cuboid({
-      size: [keep, keep, keep],
-      center: [0, 0, wallDepth / 2 - EMBED + keep / 2],
-    }),
     cuboid({
       size: [keep, keep, keep],
       center: [0, -drainLimit + keep / 2, 0],
