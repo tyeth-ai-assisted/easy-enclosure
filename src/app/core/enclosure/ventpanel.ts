@@ -311,10 +311,10 @@ const meshGrille = (vent: VentPanel, wallDepth: number): Geom3 | null => {
 // circular ring shape of the straight tube and both end caps stay flat and
 // parallel to the wall, while the tube's walls lean at the same angle as
 // the louvre blades - a parallelogram side profile with no ballooning.
-// The tube spans the same z-range as the louvre stack (inner wall face to
-// the blades' leading-edge plane) with the same shear rate, so at the top
-// of the ring (by the gap) the collar's edge runs along the topmost blade,
-// reading as one continuous line from the side.
+// The tube spans exactly the topmost blade's TOP-surface z-range with the
+// same shear rate, and is offset in y so its gap-edge points coincide with
+// that surface's wall-side and leading corners - collar edge and top slat
+// read as one continuous flush line from the side.
 const rainRing = (
   vent: VentPanel,
   ring: VentRainRing,
@@ -332,23 +332,41 @@ const rainRing = (
     return null;
   }
 
-  const { tilt, extent } = louvreStack(vent);
-  // Same z-extent as the louvre stack: near cap at the blades' inner edges,
-  // far cap at their leading edges.
-  const length = extent;
+  const { tilt, thickness, pitch, chord } = louvreStack(vent);
+  const sinT = Math.sin(tilt);
+  const cosT = Math.cos(tilt);
+  const gapHalf = degToRad(gap / 2);
+
+  // The collar's gap edges must coincide with the topmost blade's actual
+  // TOP surface (the thick plate's outward face), so the two read as one
+  // continuous line. That surface spans chord*cos(tilt) in z, starting at
+  // the top face's wall-side corner (thickness*sin(tilt) outside the
+  // blade's overall z-minimum), and its corners sit at:
+  //   trailing (wall side): y = yTop + (th/2)cos + (chord/2)sin
+  //   leading (outer tip):  y = yTop + (th/2)cos - (chord/2)sin
+  // The whole collar is shifted in y so its outer-radius gap-edge point
+  // (at R*cos(gap/2)) lands exactly on the trailing corner; the shear then
+  // carries it onto the leading corner at the far cap, since the shear
+  // rate tan(tilt) over span chord*cos(tilt) equals the blade's own
+  // chord*sin(tilt) displacement.
+  const span = chord * cosT;
+  const zStart = -wallDepth / 2 + thickness * sinT;
+  const topBladeY = vent.diameter / 2 - pitch / 2;
+  const trailingCornerY = topBladeY + (thickness / 2) * cosT + (chord / 2) * sinT;
+  const yOffset = trailingCornerY - outerRadius * Math.cos(gapHalf);
 
   // Straight annulus along +Z, near cap at z = 0.
   let tube = subtract(
     cylinder({
       radius: outerRadius,
-      height: length,
-      center: [0, 0, length / 2],
+      height: span,
+      center: [0, 0, span / 2],
       segments: BORE_SEGMENTS,
     }),
     cylinder({
       radius: innerRadius,
-      height: length + CUT_EPS,
-      center: [0, 0, length / 2],
+      height: span + CUT_EPS,
+      center: [0, 0, span / 2],
       segments: BORE_SEGMENTS,
     }),
   );
@@ -356,19 +374,18 @@ const rainRing = (
   // Cut the top opening in the unsheared frame (the shear is linear, so the
   // wedge composes correctly and stays centred opposite the drain).
   if (gap > 0) {
-    const half = degToRad(gap / 2);
     const reach = outerRadius * 2;
     tube = subtract(
       tube,
       translate(
         [0, 0, -CUT_EPS],
         extrudeLinear(
-          { height: length + CUT_EPS * 2 },
+          { height: span + CUT_EPS * 2 },
           polygon({
             points: [
               [0, 0],
-              [Math.sin(half) * reach, Math.cos(half) * reach],
-              [-Math.sin(half) * reach, Math.cos(half) * reach],
+              [Math.sin(gapHalf) * reach, Math.cos(gapHalf) * reach],
+              [-Math.sin(gapHalf) * reach, Math.cos(gapHalf) * reach],
             ],
           }),
         ),
@@ -383,13 +400,14 @@ const rainRing = (
     tube,
   );
 
-  // Near cap sits on the inner wall face (fully embedded through the wall),
-  // far cap lands on the louvre leading-edge plane.
-  const collar = translate([0, 0, -wallDepth / 2], sheared);
+  // Position so the outer-radius gap edge lies exactly on the topmost
+  // blade's top surface, near cap through far cap. The near cap remains
+  // inside the wall thickness, keeping the collar embedded.
+  const collar = translate([0, yOffset, zStart], sheared);
 
   // Clip at the wall face's edge on the drain side, in case the sheared
   // mouth would overhang past the enclosure.
-  const keep = (length + outerRadius * 2) * 4;
+  const keep = (span + outerRadius * 2) * 4;
   return intersect(
     collar,
     cuboid({
