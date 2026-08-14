@@ -1,7 +1,7 @@
 import { intersect, subtract, union } from '@jscad/modeling/src/operations/booleans';
 import { extrudeLinear } from '@jscad/modeling/src/operations/extrusions';
 import { hull } from '@jscad/modeling/src/operations/hulls';
-import { rotateX, transform, translate } from '@jscad/modeling/src/operations/transforms';
+import { rotateX, rotateZ, transform, translate } from '@jscad/modeling/src/operations/transforms';
 import { cuboid, cylinder, polygon } from '@jscad/modeling/src/primitives';
 import { degToRad } from '@jscad/modeling/src/utils';
 import * as mat4 from '@jscad/modeling/src/maths/mat4';
@@ -171,6 +171,27 @@ const ventTransform = (frame: Frame, vent: VentPanel): Mat4 => {
 
 const placeOnSurface = (frame: Frame, vent: VentPanel, geometry: Geom3): Geom3 => {
   return transform(ventTransform(frame, vent), geometry);
+};
+
+// The fan must remain insertable after the base has been printed. For vents
+// on a vertical wall, rotate the fan box independently of the louvres so its
+// open face always points towards the enclosure lid (+Z in base coordinates).
+// A lid/floor vent has no in-plane lid direction, so preserve its canonical
+// opening opposite the resolved drain direction.
+const fanBoxLidRotation = (frame: Frame, vent: VentPanel): number => {
+  const lidDirection: Vec3 = [0, 0, 1];
+  if (Math.abs(dot(lidDirection, frame.outward)) > 0.5) {
+    return 0;
+  }
+
+  const drain = resolveDrainDirection(frame, vent);
+  const canonicalY = negate(drain);
+  const canonicalX = cross(canonicalY, frame.outward);
+  const targetX = dot(lidDirection, canonicalX);
+  const targetY = dot(lidDirection, canonicalY);
+
+  // rotateZ(angle) maps canonical +Y to [-sin(angle), cos(angle)].
+  return Math.atan2(-targetX, targetY);
 };
 
 // --- Canonical-frame part builders ------------------------------------------
@@ -601,11 +622,12 @@ export const rainRing = (
 // the wall and the fan mounts against the inner end plate, which carries the
 // airflow opening and the fan's screw pattern. The fan pocket is sized to
 // actually admit the fan (frameSize plus a sliding clearance) and the face
-// OPPOSITE the drain side (+Y, which faces the lid opening for wall vents)
-// is deliberately left without a wall - a fully enclosed duct would make it
-// physically impossible to insert a real fan after printing. Returned
-// geometry already has its openings subtracted, so it must be unioned into
-// the body AFTER the wall cutouts have been applied.
+// canonical +Y face is deliberately left without a wall - a fully enclosed
+// duct would make it physically impossible to insert a real fan after
+// printing. The caller rotates this completed box independently of the
+// louvres so +Y faces the enclosure lid for wall vents. Returned geometry
+// already has its openings subtracted, so it must be unioned into the body
+// AFTER the wall cutouts have been applied.
 export const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | null => {
   const size = box.frameSize;
   const wallT = Math.max(0.8, box.wallThickness);
@@ -643,8 +665,8 @@ export const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geo
   );
 
   if (box.frameShape === 'square') {
-    // Footprint: walls on -Y (drain side) and both X sides only; the +Y face
-    // has no wall so the fan can be dropped/slid into the pocket.
+    // Footprint: walls on -Y and both X sides only; the +Y face has no wall
+    // so the fan can be dropped/slid into the pocket.
     const outerW = pocket + wallT * 2;
     const outerD = pocket + wallT;
     const yCenter = -wallT / 2;
@@ -653,7 +675,7 @@ export const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geo
     solids.push(
       cuboid({ size: [outerW, outerD, plateT], center: [0, yCenter, z0 + plateT / 2] }),
     );
-    // Drain-side wall.
+    // Wall opposite the canonical opening.
     solids.push(
       cuboid({
         size: [outerW, wallT, outerHeight],
@@ -814,13 +836,14 @@ export const ventPanelAdditions = (
     if (vent.fanBox) {
       const box = fanBox(vent, vent.fanBox, frame.wallDepth);
       if (box) {
+        const lidFacingBox = rotateZ(fanBoxLidRotation(frame, vent), box);
         // The pocket must admit the fan itself, so on tight builds the duct
         // walls can reach past the enclosure's outer shell (they simply fuse
         // into the enclosure walls on the way). Trim anything that would
         // protrude beyond the outer envelope, e.g. through the floor.
         additions.push(
           intersect(
-            placeOnSurface(frame, vent, box),
+            placeOnSurface(frame, vent, lidFacingBox),
             cuboid({
               size: [params.width, params.length, params.height],
               center: [params.width / 2, params.length / 2, params.height / 2],
