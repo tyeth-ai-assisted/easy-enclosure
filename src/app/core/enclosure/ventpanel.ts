@@ -9,7 +9,7 @@ import * as mat4 from '@jscad/modeling/src/maths/mat4';
 import type { Geom3 } from '@jscad/modeling/src/geometries/types';
 import type { Mat4, Vec3 } from '@jscad/modeling/src/maths/types';
 
-import { Params, VentFanBox, VentPanel, VentRainRing } from '../params';
+import { Params, VentExtraScrewHole, VentFanBox, VentPanel, VentRainRing } from '../params';
 import { Surface } from '.';
 
 // How far parts embed into the surrounding wall so unions are watertight.
@@ -21,6 +21,10 @@ const RAIN_RING_CLEARANCE = 1;
 // Lateral clearance around the fan inside its duct pocket, so a real fan of
 // exactly frameSize can be slid in through the duct's open face.
 const FAN_POCKET_CLEARANCE = 0.5;
+// Defaults for the inside screw bosses (per-hole overrides in
+// VentExtraScrewHole.outerDiameter / .height).
+const SCREW_BOSS_HEIGHT = 5;
+const SCREW_BOSS_WALL = 2;
 // Extra vertical overlap between adjacent louvre blades (1 = edges exactly
 // meet in projection; >1 guarantees no straight-through line of sight).
 const LOUVRE_OVERLAP = 1.35;
@@ -182,23 +186,71 @@ const boreCutout = (vent: VentPanel, wallDepth: number): Geom3 => {
   });
 };
 
-const extraScrewHoleCutouts = (
+const validScrewHoles = (holes: VentPanel['extraScrewHoles']) =>
+  holes.filter((hole) => hole.diameter > 0 && hole.radius > 0);
+
+const screwBossHeight = (hole: VentExtraScrewHole) => Math.max(1, hole.height ?? SCREW_BOSS_HEIGHT);
+
+// Blind pilot-hole cutouts for the inside screw bosses: drilled EMBED deep
+// into the wall from the inner face for extra thread engagement, but never
+// through to the outer weather surface - the remaining outer skin is
+// wallDepth - EMBED. (These used to be straight-through holes, which gave
+// wind-driven rain a direct path past the louvres.)
+const screwBossPilotCutouts = (
   holes: VentPanel['extraScrewHoles'],
   wallDepth: number,
 ): Geom3[] => {
-  return holes
-    .filter((hole) => hole.diameter > 0 && hole.radius > 0)
-    .map((hole) => {
-      const angle = degToRad(hole.angleDeg);
-      return translate(
-        [Math.cos(angle) * hole.radius, Math.sin(angle) * hole.radius, 0],
-        cylinder({
-          radius: hole.diameter / 2,
-          height: wallDepth + CUT_EPS,
-          segments: SCREW_SEGMENTS,
-        }),
-      );
-    });
+  return validScrewHoles(holes).map((hole) => {
+    const angle = degToRad(hole.angleDeg);
+    return translate(
+      [
+        Math.cos(angle) * hole.radius,
+        Math.sin(angle) * hole.radius,
+        -wallDepth / 2 + (EMBED - CUT_EPS) / 2,
+      ],
+      cylinder({
+        radius: hole.diameter / 2,
+        height: EMBED + CUT_EPS,
+        segments: SCREW_SEGMENTS,
+      }),
+    );
+  });
+};
+
+// Raised screw bosses standing inward from the inner wall face, one per
+// extraScrewHole, each with a blind pilot hole down its centre. The fan is
+// driven from inside the enclosure against the boss tips; nothing penetrates
+// the outer surface.
+const ventScrewBosses = (
+  holes: VentPanel['extraScrewHoles'],
+  wallDepth: number,
+): Geom3 | null => {
+  const bosses = validScrewHoles(holes).map((hole) => {
+    const angle = degToRad(hole.angleDeg);
+    const height = screwBossHeight(hole);
+    const outerRadius =
+      Math.max(hole.diameter + 1.6, hole.outerDiameter ?? hole.diameter + SCREW_BOSS_WALL * 2) / 2;
+    const x = Math.cos(angle) * hole.radius;
+    const y = Math.sin(angle) * hole.radius;
+    // Boss body spans from EMBED inside the wall down to the tip; the pilot
+    // runs the full boss length and meets the blind in-wall cutout above.
+    const centerZ = -wallDepth / 2 + (EMBED - height) / 2;
+    return subtract(
+      cylinder({
+        radius: outerRadius,
+        height: height + EMBED,
+        center: [x, y, centerZ],
+        segments: SCREW_SEGMENTS,
+      }),
+      cylinder({
+        radius: hole.diameter / 2,
+        height: height + EMBED + CUT_EPS,
+        center: [x, y, centerZ - CUT_EPS / 2],
+        segments: SCREW_SEGMENTS,
+      }),
+    );
+  });
+  return bosses.length > 0 ? union(bosses) : null;
 };
 
 // Derived dimensions of the louvre blade stack, shared between the blade
@@ -304,7 +356,7 @@ const rainRingInnerRegion = (
 // its inner edge, and adjacent blades overlap in Y-projection so there is no
 // straight line of sight through the vent. Blades sit flush with the inner
 // wall face and protrude outward, never into the enclosure.
-export const louvres = (vent: VentPanel, wallDepth: number): Geom3 | null => {
+export const louvres = (vent: VentPanel, wallDepth: number, drainLimit: number): Geom3 | null => {
   const bore = vent.diameter;
 
   if (bore <= 0) {
@@ -325,6 +377,27 @@ export const louvres = (vent: VentPanel, wallDepth: number): Geom3 | null => {
       ),
     );
   }
+
+  // Sill blade: the regular grid places blade centres from -bore/2 + pitch/2
+  // upwards, so the lowest blade's TOP surface crosses the outer wall face
+  // well above the bore's bottom edge, leaving a see-through slit between
+  // the bore's bottom lip and the underside of the first blade. Seat one
+  // extra blade so its top surface passes exactly through the bore's bottom
+  // edge at the outer wall face: the wall lip and the sill then act as a
+  // standard louvre pair and the bottom of the stack gets the same
+  // line-of-sight protection as every interior pair. (The top needs no
+  // counterpart: the topmost blade's top surface already crosses the outer
+  // wall face just below the bore's top lip, which the wall itself closes.)
+  const sinT = Math.sin(tilt);
+  const cosT = Math.cos(tilt);
+  const tAtWallFace = (wallDepth / 2 - bladeCenterZ - (thickness / 2) * sinT) / cosT;
+  const sillY = -bore / 2 - (thickness / 2) * cosT + tAtWallFace * sinT;
+  blades.push(
+    translate(
+      [0, sillY, bladeCenterZ],
+      rotateX(tilt, cuboid({ size: [bladeLength, thickness, chord] })),
+    ),
+  );
 
   // Trim the blade stack: inside the wall thickness the blades may embed
   // LOUVRE_RIM_EMBED into the wall around the bore (so they fuse with it);
@@ -347,7 +420,15 @@ export const louvres = (vent: VentPanel, wallDepth: number): Geom3 | null => {
         segments: BORE_SEGMENTS,
       });
 
-  return intersect(union(blades), union(rimRegion, outsideRegion));
+  // Clip at the enclosure's edge on the drain side (like the rain collar):
+  // the sill reaches down to the collar's inner wall, which on large vents
+  // can dip past the enclosure's outer surface.
+  const keep = (extent + bore + LOUVRE_RIM_EMBED * 2) * 4;
+  return intersect(
+    union(blades),
+    union(rimRegion, outsideRegion),
+    cuboid({ size: [keep, keep, keep], center: [0, -drainLimit + keep / 2, 0] }),
+  );
 };
 
 // Insect screen: a thin crosshatch grille (square openings) rather than a
@@ -659,7 +740,8 @@ const ventsForSurfaces = (params: Params, surfacesFilter: Surface[]): VentPanel[
 };
 
 // Material removed from the wall: the airflow bore, plus (when there is no
-// fan box) any flush-mount screw holes straight through the wall.
+// fan box) the blind pilot segments of the inside screw bosses - never a
+// hole through the outer weather surface.
 export const ventPanelCutouts = (
   params: Params,
   surfacesFilter: Surface[] = ['front', 'back', 'left', 'right', 'bottom'],
@@ -670,7 +752,7 @@ export const ventPanelCutouts = (
     const frame = ventFrame(params, vent);
     const parts: Geom3[] = [boreCutout(vent, frame.wallDepth)];
     if (!vent.fanBox) {
-      parts.push(...extraScrewHoleCutouts(vent.extraScrewHoles ?? [], frame.wallDepth));
+      parts.push(...screwBossPilotCutouts(vent.extraScrewHoles ?? [], frame.wallDepth));
     }
     cutouts.push(placeOnSurface(frame, vent, union(parts)));
   });
@@ -689,8 +771,10 @@ export const ventPanelAdditions = (
   ventsForSurfaces(params, surfacesFilter).forEach((vent) => {
     const frame = ventFrame(params, vent);
     const parts: Geom3[] = [];
+    const drain = resolveDrainDirection(frame, vent);
+    const drainLimit = drainEdgeDistance(params, frame, drain);
 
-    const fins = louvres(vent, frame.wallDepth);
+    const fins = louvres(vent, frame.wallDepth, drainLimit);
     if (fins) {
       parts.push(fins);
     }
@@ -699,6 +783,13 @@ export const ventPanelAdditions = (
       const mesh = meshGrille(vent, frame.wallDepth);
       if (mesh) {
         parts.push(mesh);
+      }
+    }
+
+    if (!vent.fanBox) {
+      const bosses = ventScrewBosses(vent.extraScrewHoles ?? [], frame.wallDepth);
+      if (bosses) {
+        parts.push(bosses);
       }
     }
 
@@ -722,13 +813,7 @@ export const ventPanelAdditions = (
     }
 
     if (vent.rainRing?.enabled) {
-      const drain = resolveDrainDirection(frame, vent);
-      const collar = rainRing(
-        vent,
-        vent.rainRing,
-        frame.wallDepth,
-        drainEdgeDistance(params, frame, drain),
-      );
+      const collar = rainRing(vent, vent.rainRing, frame.wallDepth, drainLimit);
       if (collar) {
         parts.push(collar);
       }

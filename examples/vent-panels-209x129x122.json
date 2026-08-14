@@ -116,12 +116,16 @@
         {
           "angleDeg": 90,
           "radius": 44,
-          "diameter": 4.3
+          "diameter": 4.3,
+          "outerDiameter": 8.3,
+          "height": 5
         },
         {
           "angleDeg": 270,
           "radius": 44,
-          "diameter": 4.3
+          "diameter": 4.3,
+          "outerDiameter": 8.3,
+          "height": 5
         }
       ]
     }

@@ -28,14 +28,23 @@ export type InternalWall = {
   rotation: number;
 };
 
-// A single screw hole positioned in polar coordinates around a vent centre.
+// A single screw position in polar coordinates around a vent centre.
 // angleDeg is measured in the vent's local plane: 0 deg points towards the
 // panel's local +X, 90 deg points away from the drain direction ("up" when
-// draining towards the bottom).
+// draining towards the bottom). On a vent WITHOUT a fan box each entry is
+// realised as a raised screw boss on the INSIDE wall face with a blind
+// pilot hole (never cut through the outer weather surface); on a fan box's
+// blower ears it is a plain hole through the inner mounting plate.
 export type VentExtraScrewHole = {
   angleDeg: number;
   radius: number;
+  // Screw / pilot hole diameter.
   diameter: number;
+  // Boss outer diameter and stand-off height of the raised peg on the inner
+  // wall face (wall-mount bosses only; ignored for fan-box blower ears).
+  // Defaults are applied in the geometry builder when omitted.
+  outerDiameter?: number;
+  height?: number;
 };
 
 // Partial-annulus standoff collar around the vent opening on the weather
@@ -86,8 +95,10 @@ export type VentPanel = {
   fanBox?: VentFanBox;
   // Optional C-shaped rain collar around the vent on the weather side.
   rainRing?: VentRainRing;
-  // Screw holes cut straight through the wall around the vent, for mounting a
-  // fan flush against the inside of the wall when there is no fan box.
+  // Screw bosses on the INSIDE wall face around the vent (raised pegs with
+  // blind pilot holes), for mounting a fan flush against the inside of the
+  // wall when there is no fan box. Driven from inside; they never penetrate
+  // the outer weather surface.
   extraScrewHoles: VentExtraScrewHole[];
 };
 

@@ -775,7 +775,7 @@
                 </div>
 
                 <div class="input-group">
-                  <label>Diameter</label>
+                  <label>Screw Diameter</label>
                   <input
                     type="number"
                     min="0.5"
@@ -789,10 +789,42 @@
                     "
                   />
                 </div>
+
+                <div class="input-group">
+                  <label>Boss Diameter</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.1"
+                    [value]="screwHole.outerDiameter ?? screwHole.diameter + 4"
+                    (keydown.enter)="$any($event.target).blur()"
+                    (blur)="
+                      updateVentWallScrewHole(ventIndex, holeIndex, {
+                        outerDiameter: +$any($event.target).value,
+                      })
+                    "
+                  />
+                </div>
+
+                <div class="input-group">
+                  <label>Boss Height</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    [value]="screwHole.height ?? 5"
+                    (keydown.enter)="$any($event.target).blur()"
+                    (blur)="
+                      updateVentWallScrewHole(ventIndex, holeIndex, {
+                        height: +$any($event.target).value,
+                      })
+                    "
+                  />
+                </div>
               </div>
             }
             <button type="button" class="add-btn" (click)="addVentWallScrewHole(ventIndex)">
-              ADD WALL SCREW HOLE
+              ADD WALL SCREW BOSS
             </button>
           }
         </div>

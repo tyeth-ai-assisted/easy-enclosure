@@ -250,6 +250,8 @@ export class ParamsFormComponent {
       angleDeg: 90,
       radius: current.diameter / 2 + 8,
       diameter: 4.3,
+      outerDiameter: 8.3,
+      height: 5,
     };
     this.updateVentPanel(index, { extraScrewHoles: [...current.extraScrewHoles, next] });
   }
