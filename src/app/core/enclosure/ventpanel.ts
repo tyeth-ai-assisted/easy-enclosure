@@ -16,6 +16,11 @@ import { Surface } from '.';
 const EMBED = 1;
 // How far louvre blades overlap radially into the wall around the bore.
 const LOUVRE_RIM_EMBED = 1.5;
+// Radial clearance between the bore and the rain collar's inner wall.
+const RAIN_RING_CLEARANCE = 1;
+// Lateral clearance around the fan inside its duct pocket, so a real fan of
+// exactly frameSize can be slid in through the duct's open face.
+const FAN_POCKET_CLEARANCE = 0.5;
 // Extra vertical overlap between adjacent louvre blades (1 = edges exactly
 // meet in projection; >1 guarantees no straight-through line of sight).
 const LOUVRE_OVERLAP = 1.35;
@@ -216,12 +221,63 @@ const louvreStack = (vent: VentPanel) => {
   return { count, thickness, tilt, pitch, chord, extent };
 };
 
+// Shared placement of the rain collar in the vent's canonical frame, used by
+// BOTH rainRing() (to build the collar) and louvres() (to clip the blades to
+// the collar's inner wall) so the two can never drift apart. The collar is a
+// straight annulus (inner/outer radius) spanning z_local in [0, span], then
+// sheared y' = y - z_local * tan(tilt) and translated by [0, yOffset, zStart].
+export const rainRingFrame = (vent: VentPanel, ring: VentRainRing, wallDepth: number) => {
+  const wallT = Math.max(0.8, ring.wallThickness);
+  const gap = Math.min(170, Math.max(0, ring.gapAngleDeg));
+  // Sit just outside the louvre blades' clipped edges.
+  const innerRadius = vent.diameter / 2 + RAIN_RING_CLEARANCE;
+  const outerRadius = innerRadius + wallT;
+
+  const { tilt, thickness, pitch, chord } = louvreStack(vent);
+  const sinT = Math.sin(tilt);
+  const cosT = Math.cos(tilt);
+  const gapHalf = degToRad(gap / 2);
+
+  // The collar spans exactly the topmost blade's TOP-surface z-range and is
+  // offset in y so its outer-radius gap-edge points coincide with that
+  // surface's wall-side and leading corners (see rainRing()).
+  const span = chord * cosT;
+  const zStart = -wallDepth / 2 + thickness * sinT;
+  const topBladeY = vent.diameter / 2 - pitch / 2;
+  const trailingCornerY = topBladeY + (thickness / 2) * cosT + (chord / 2) * sinT;
+  const yOffset = trailingCornerY - outerRadius * Math.cos(gapHalf);
+
+  // Column-major mat4 shear towards the drain side: y' = y - tan(tilt) * z.
+  const shear: Mat4 = mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, -Math.tan(tilt), 1, 0, 0, 0, 0, 1);
+
+  return { wallT, gap, gapHalf, innerRadius, outerRadius, span, zStart, yOffset, shear };
+};
+
+// Solid bounded by the rain collar's inner wall, extended along the vent
+// axis: a cylinder of the collar's inner radius carried through the same
+// shear and offset as the collar itself. Clipping the louvre blades to this
+// makes every blade's edge land exactly on the collar's inner surface at
+// every height, instead of stopping RAIN_RING_CLEARANCE short at the bare
+// bore circle and leaving an annular slit for wind-driven rain.
+const rainRingInnerRegion = (
+  vent: VentPanel,
+  ring: VentRainRing,
+  wallDepth: number,
+  height: number,
+): Geom3 => {
+  const { innerRadius, zStart, yOffset, shear } = rainRingFrame(vent, ring, wallDepth);
+  return translate(
+    [0, yOffset, zStart],
+    transform(shear, cylinder({ radius: innerRadius, height, segments: BORE_SEGMENTS })),
+  );
+};
+
 // Angled, overlapping rain-louvre blades spanning the bore. Each blade is
 // tilted so its outer edge sits lower (towards -Y, the drain direction) than
 // its inner edge, and adjacent blades overlap in Y-projection so there is no
 // straight line of sight through the vent. Blades sit flush with the inner
 // wall face and protrude outward, never into the enclosure.
-const louvres = (vent: VentPanel, wallDepth: number): Geom3 | null => {
+export const louvres = (vent: VentPanel, wallDepth: number): Geom3 | null => {
   const bore = vent.diameter;
 
   if (bore <= 0) {
@@ -245,19 +301,26 @@ const louvres = (vent: VentPanel, wallDepth: number): Geom3 | null => {
 
   // Trim the blade stack: inside the wall thickness the blades may embed
   // LOUVRE_RIM_EMBED into the wall around the bore (so they fuse with it);
-  // outside the wall they are trimmed to the bore circle.
+  // outside the wall they are trimmed to the bore circle - unless a rain
+  // collar surrounds the vent, in which case the blades extend all the way
+  // out to the collar's inner wall (which is sheared with z, so the clip
+  // region must be the same sheared cylinder the collar is built around;
+  // a plain bore-radius clip would leave an annular rain slit between the
+  // blade edges and the collar).
   const rimRegion = cylinder({
     radius: bore / 2 + LOUVRE_RIM_EMBED,
     height: wallDepth,
     segments: BORE_SEGMENTS,
   });
-  const boreRegion = cylinder({
-    radius: bore / 2,
-    height: (extent + wallDepth) * 2,
-    segments: BORE_SEGMENTS,
-  });
+  const outsideRegion = vent.rainRing?.enabled
+    ? rainRingInnerRegion(vent, vent.rainRing, wallDepth, (extent + wallDepth) * 2)
+    : cylinder({
+        radius: bore / 2,
+        height: (extent + wallDepth) * 2,
+        segments: BORE_SEGMENTS,
+      });
 
-  return intersect(union(blades), union(rimRegion, boreRegion));
+  return intersect(union(blades), union(rimRegion, outsideRegion));
 };
 
 // Insect screen: a thin crosshatch grille (square openings) rather than a
@@ -315,27 +378,15 @@ const meshGrille = (vent: VentPanel, wallDepth: number): Geom3 | null => {
 // same shear rate, and is offset in y so its gap-edge points coincide with
 // that surface's wall-side and leading corners - collar edge and top slat
 // read as one continuous flush line from the side.
-const rainRing = (
+export const rainRing = (
   vent: VentPanel,
   ring: VentRainRing,
   wallDepth: number,
   drainLimit: number,
 ): Geom3 | null => {
-  const wallT = Math.max(0.8, ring.wallThickness);
-  const gap = Math.min(170, Math.max(0, ring.gapAngleDeg));
-  // Sit just outside the louvre stack, which is trimmed to the bore circle
-  // outside the wall.
-  const innerRadius = vent.diameter / 2 + 1;
-  const outerRadius = innerRadius + wallT;
-
   if (vent.diameter <= 0) {
     return null;
   }
-
-  const { tilt, thickness, pitch, chord } = louvreStack(vent);
-  const sinT = Math.sin(tilt);
-  const cosT = Math.cos(tilt);
-  const gapHalf = degToRad(gap / 2);
 
   // The collar's gap edges must coincide with the topmost blade's actual
   // TOP surface (the thick plate's outward face), so the two read as one
@@ -348,12 +399,13 @@ const rainRing = (
   // (at R*cos(gap/2)) lands exactly on the trailing corner; the shear then
   // carries it onto the leading corner at the far cap, since the shear
   // rate tan(tilt) over span chord*cos(tilt) equals the blade's own
-  // chord*sin(tilt) displacement.
-  const span = chord * cosT;
-  const zStart = -wallDepth / 2 + thickness * sinT;
-  const topBladeY = vent.diameter / 2 - pitch / 2;
-  const trailingCornerY = topBladeY + (thickness / 2) * cosT + (chord / 2) * sinT;
-  const yOffset = trailingCornerY - outerRadius * Math.cos(gapHalf);
+  // chord*sin(tilt) displacement. All of these numbers come from
+  // rainRingFrame(), shared with the louvre-blade clipping.
+  const { gap, gapHalf, innerRadius, outerRadius, span, zStart, yOffset, shear } = rainRingFrame(
+    vent,
+    ring,
+    wallDepth,
+  );
 
   // Straight annulus along +Z, near cap at z = 0.
   let tube = subtract(
@@ -394,11 +446,8 @@ const rainRing = (
   }
 
   // Shear towards the drain side (-Y as z increases), matching the blades'
-  // own lean. Column-major mat4: y' = y - tan(tilt) * z.
-  const sheared = transform(
-    mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, -Math.tan(tilt), 1, 0, 0, 0, 0, 1),
-    tube,
-  );
+  // own lean: y' = y - tan(tilt) * z.
+  const sheared = transform(shear, tube);
 
   // Position so the outer-radius gap edge lies exactly on the topmost
   // blade's top surface, near cap through far cap. The near cap remains
@@ -420,10 +469,14 @@ const rainRing = (
 // Stand-off duct on the INSIDE of the wall. The louvres stay the outermost
 // weather barrier on the outer wall face; the fan box extends inward from
 // the wall and the fan mounts against the inner end plate, which carries the
-// airflow opening and the fan's screw pattern. Returned geometry already has
-// its openings subtracted, so it must be unioned into the body AFTER the
-// wall cutouts have been applied.
-const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | null => {
+// airflow opening and the fan's screw pattern. The fan pocket is sized to
+// actually admit the fan (frameSize plus a sliding clearance) and the face
+// OPPOSITE the drain side (+Y, which faces the lid opening for wall vents)
+// is deliberately left without a wall - a fully enclosed duct would make it
+// physically impossible to insert a real fan after printing. Returned
+// geometry already has its openings subtracted, so it must be unioned into
+// the body AFTER the wall cutouts have been applied.
+export const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | null => {
   const size = box.frameSize;
   const wallT = Math.max(0.8, box.wallThickness);
   const plateT = wallT;
@@ -440,10 +493,11 @@ const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | nu
   const z0 = -wallDepth / 2 - depth;
   const outerHeight = z1 - z0;
   const outerCenterZ = (z0 + z1) / 2;
-  const cavityHeight = z1 + CUT_EPS - (z0 + plateT);
-  const cavityCenterZ = (z0 + plateT + z1 + CUT_EPS) / 2;
   const plateCutHeight = plateT + CUT_EPS * 2;
   const plateCutCenterZ = z0 + plateT / 2;
+  // Interior pocket the fan actually sits in: the fan's own frame size plus
+  // clearance, so the fan can be slid in through the open +Y face.
+  const pocket = size + FAN_POCKET_CLEARANCE;
 
   const solids: Geom3[] = [];
   const cuts: Geom3[] = [];
@@ -459,13 +513,32 @@ const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | nu
   );
 
   if (box.frameShape === 'square') {
-    solids.push(cuboid({ size: [size, size, outerHeight], center: [0, 0, outerCenterZ] }));
-    cuts.push(
+    // Footprint: walls on -Y (drain side) and both X sides only; the +Y face
+    // has no wall so the fan can be dropped/slid into the pocket.
+    const outerW = pocket + wallT * 2;
+    const outerD = pocket + wallT;
+    const yCenter = -wallT / 2;
+
+    // End plate carrying the bore and the fan's screw pattern.
+    solids.push(
+      cuboid({ size: [outerW, outerD, plateT], center: [0, yCenter, z0 + plateT / 2] }),
+    );
+    // Drain-side wall.
+    solids.push(
       cuboid({
-        size: [size - wallT * 2, size - wallT * 2, cavityHeight],
-        center: [0, 0, cavityCenterZ],
+        size: [outerW, wallT, outerHeight],
+        center: [0, -(pocket + wallT) / 2, outerCenterZ],
       }),
     );
+    // Side walls.
+    for (const sx of [-1, 1]) {
+      solids.push(
+        cuboid({
+          size: [wallT, outerD, outerHeight],
+          center: [(sx * (pocket + wallT)) / 2, yCenter, outerCenterZ],
+        }),
+      );
+    }
 
     const inset = box.screwHoleInset;
     const offset = size / 2 - inset;
@@ -482,21 +555,36 @@ const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | nu
       }
     }
   } else {
+    const pocketR = pocket / 2;
+
+    // End plate carrying the bore, the screw ears and the duct wall footing.
     solids.push(
       cylinder({
-        radius: size / 2,
+        radius: pocketR + wallT,
+        height: plateT,
+        center: [0, 0, z0 + plateT / 2],
+        segments: BORE_SEGMENTS,
+      }),
+    );
+    // Duct wall: a tube around the pocket with its +Y half removed, leaving
+    // an opening the full pocket diameter wide for the fan to slide in.
+    const tube = subtract(
+      cylinder({
+        radius: pocketR + wallT,
         height: outerHeight,
         center: [0, 0, outerCenterZ],
         segments: BORE_SEGMENTS,
       }),
-    );
-    cuts.push(
       cylinder({
-        radius: size / 2 - wallT,
-        height: cavityHeight,
-        center: [0, 0, cavityCenterZ],
+        radius: pocketR,
+        height: outerHeight + CUT_EPS,
+        center: [0, 0, outerCenterZ],
         segments: BORE_SEGMENTS,
       }),
+    );
+    const half = (pocketR + wallT) * 2 + CUT_EPS;
+    solids.push(
+      subtract(tube, cuboid({ size: [half, half, half * 2], center: [0, half / 2, outerCenterZ] })),
     );
 
     // Blower mounting ears: stadium-shaped tabs on the end plate reaching out
@@ -586,7 +674,19 @@ export const ventPanelAdditions = (
     if (vent.fanBox) {
       const box = fanBox(vent, vent.fanBox, frame.wallDepth);
       if (box) {
-        parts.push(box);
+        // The pocket must admit the fan itself, so on tight builds the duct
+        // walls can reach past the enclosure's outer shell (they simply fuse
+        // into the enclosure walls on the way). Trim anything that would
+        // protrude beyond the outer envelope, e.g. through the floor.
+        additions.push(
+          intersect(
+            placeOnSurface(frame, vent, box),
+            cuboid({
+              size: [params.width, params.length, params.height],
+              center: [params.width / 2, params.length / 2, params.height / 2],
+            }),
+          ),
+        );
       }
     }
 
