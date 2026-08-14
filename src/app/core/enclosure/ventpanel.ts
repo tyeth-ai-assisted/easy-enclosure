@@ -238,19 +238,46 @@ export const rainRingFrame = (vent: VentPanel, ring: VentRainRing, wallDepth: nu
   const cosT = Math.cos(tilt);
   const gapHalf = degToRad(gap / 2);
 
-  // The collar spans exactly the topmost blade's TOP-surface z-range and is
-  // offset in y so its outer-radius gap-edge points coincide with that
-  // surface's wall-side and leading corners (see rainRing()).
+  // The collar spans exactly the topmost blade's TOP-surface z-range. With a
+  // top opening it is seated so its gap-edge INNER corners lie on that top
+  // surface's plane: the blades' clipped edges end exactly on the collar's
+  // inner wall (rainRingInnerRegion), so the topmost blade's edge then runs
+  // precisely into the collar's gap-edge corners; any collar material still
+  // standing above the blade plane is shaved off in rainRing() by the
+  // blade's own face plane, keeping edge and blade coincident by
+  // construction for any parameter combination. A closed ring (gap = 0)
+  // instead sits tangent to the plane at the outer radius, as before.
   const span = chord * cosT;
   const zStart = -wallDepth / 2 + thickness * sinT;
   const topBladeY = vent.diameter / 2 - pitch / 2;
   const trailingCornerY = topBladeY + (thickness / 2) * cosT + (chord / 2) * sinT;
-  const yOffset = trailingCornerY - outerRadius * Math.cos(gapHalf);
+  const seatRadius = gap > 0 ? innerRadius : outerRadius;
+  const yOffset = trailingCornerY - seatRadius * Math.cos(gapHalf);
 
   // Column-major mat4 shear towards the drain side: y' = y - tan(tilt) * z.
   const shear: Mat4 = mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, -Math.tan(tilt), 1, 0, 0, 0, 0, 1);
 
   return { wallT, gap, gapHalf, innerRadius, outerRadius, span, zStart, yOffset, shear };
+};
+
+// Half-space (as an oversized solid) bounded below by the topmost louvre
+// blade's ACTUAL top-surface plane, built with the very same rotateX +
+// translate that louvres() uses to place that blade - not from re-derived
+// coordinates. rainRing() subtracts this from the collar so the collar's
+// opening edge is exactly coincident with the blade's face plane by
+// construction, for any vent/blade parameter combination.
+export const topBladePlaneCut = (vent: VentPanel, wallDepth: number): Geom3 => {
+  const { count, thickness, tilt, pitch, chord, extent } = louvreStack(vent);
+  const topBladeY = -vent.diameter / 2 + pitch * (count - 0.5);
+  const bladeCenterZ = -wallDepth / 2 + extent / 2;
+  const reach = (vent.diameter + chord + wallDepth) * 4;
+  return translate(
+    [0, topBladeY, bladeCenterZ],
+    rotateX(
+      tilt,
+      cuboid({ size: [reach, reach, reach], center: [0, thickness / 2 + reach / 2, 0] }),
+    ),
+  );
 };
 
 // Solid bounded by the rain collar's inner wall, extended along the vent
@@ -375,9 +402,9 @@ const meshGrille = (vent: VentPanel, wallDepth: number): Geom3 | null => {
 // parallel to the wall, while the tube's walls lean at the same angle as
 // the louvre blades - a parallelogram side profile with no ballooning.
 // The tube spans exactly the topmost blade's TOP-surface z-range with the
-// same shear rate, and is offset in y so its gap-edge points coincide with
-// that surface's wall-side and leading corners - collar edge and top slat
-// read as one continuous flush line from the side.
+// same shear rate, and its opening edge is cut by the topmost blade's own
+// face plane - collar edge and top slat read as one continuous flush line
+// from the side, coincident by construction.
 export const rainRing = (
   vent: VentPanel,
   ring: VentRainRing,
@@ -388,19 +415,16 @@ export const rainRing = (
     return null;
   }
 
-  // The collar's gap edges must coincide with the topmost blade's actual
+  // The collar's opening edge must coincide with the topmost blade's actual
   // TOP surface (the thick plate's outward face), so the two read as one
-  // continuous line. That surface spans chord*cos(tilt) in z, starting at
-  // the top face's wall-side corner (thickness*sin(tilt) outside the
-  // blade's overall z-minimum), and its corners sit at:
-  //   trailing (wall side): y = yTop + (th/2)cos + (chord/2)sin
-  //   leading (outer tip):  y = yTop + (th/2)cos - (chord/2)sin
-  // The whole collar is shifted in y so its outer-radius gap-edge point
-  // (at R*cos(gap/2)) lands exactly on the trailing corner; the shear then
-  // carries it onto the leading corner at the far cap, since the shear
-  // rate tan(tilt) over span chord*cos(tilt) equals the blade's own
-  // chord*sin(tilt) displacement. All of these numbers come from
-  // rainRingFrame(), shared with the louvre-blade clipping.
+  // continuous line. Rather than computing matching cap coordinates (which
+  // kept drifting out of alignment whenever the blade geometry changed),
+  // the collar is seated so its gap-edge inner corners lie on that surface's
+  // plane (see rainRingFrame()) and then everything still standing above the
+  // plane is CUT AWAY by the blade's own face plane (topBladePlaneCut, built
+  // from the same transform that places the blade). The blade's clipped edge
+  // and the collar's opening edge are then the same plane-cylinder
+  // intersection curve - exactly coincident by construction.
   const { gap, gapHalf, innerRadius, outerRadius, span, zStart, yOffset, shear } = rainRingFrame(
     vent,
     ring,
@@ -449,10 +473,17 @@ export const rainRing = (
   // own lean: y' = y - tan(tilt) * z.
   const sheared = transform(shear, tube);
 
-  // Position so the outer-radius gap edge lies exactly on the topmost
-  // blade's top surface, near cap through far cap. The near cap remains
-  // inside the wall thickness, keeping the collar embedded.
-  const collar = translate([0, yOffset, zStart], sheared);
+  // Position so the gap-edge inner corners lie on the topmost blade's top
+  // surface, near cap through far cap. The near cap remains inside the wall
+  // thickness, keeping the collar embedded.
+  let collar = translate([0, yOffset, zStart], sheared);
+
+  // Shave everything above the topmost blade's actual face plane so the
+  // collar's opening edge is exactly that plane (skipped for a closed ring,
+  // which sits tangent below the plane instead).
+  if (gap > 0) {
+    collar = subtract(collar, topBladePlaneCut(vent, wallDepth));
+  }
 
   // Clip at the wall face's edge on the drain side, in case the sheared
   // mouth would overhang past the enclosure.
