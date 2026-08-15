@@ -25,6 +25,10 @@ const FAN_POCKET_CLEARANCE = 0.5;
 // VentExtraScrewHole.outerDiameter / .height).
 const SCREW_BOSS_HEIGHT = 5;
 const SCREW_BOSS_WALL = 2;
+// Solid material left at the outer nub's tip in through-wall mode: the pilot
+// stops this far short of the tip, so the protruding end stays capped and
+// the outer surface has no opening anywhere.
+const SCREW_BOSS_CAP = 1;
 // Extra vertical overlap between adjacent louvre blades (1 = edges exactly
 // meet in projection; >1 guarantees no straight-through line of sight).
 const LOUVRE_OVERLAP = 1.35;
@@ -210,26 +214,28 @@ const boreCutout = (vent: VentPanel, wallDepth: number): Geom3 => {
 const validScrewHoles = (holes: VentPanel['extraScrewHoles']) =>
   holes.filter((hole) => hole.diameter > 0 && hole.radius > 0);
 
-// Full-length pilot rods for through-wall screw bosses, long enough to pass
-// every vent part along the screw axis. Subtracted from the vent's unioned
-// additions so the bore stays genuinely continuous end to end even where
-// the rain collar's sheared skirt or a blade tip crosses the screw's path
-// outside the wall.
+// Pilot rods for through-wall screw bosses, spanning exactly the working
+// bore: from the inner boss tip, through the wall, into the outer nub up to
+// (but not through) the nub's solid cap. Subtracted from the vent's unioned
+// additions so the bore stays clear even where another vent part (the rain
+// collar's skirt, a blade tip) happens to cross the screw's path.
 const throughPilotCutouts = (
   vent: VentPanel,
   holes: VentPanel['extraScrewHoles'],
   wallDepth: number,
 ): Geom3[] => {
-  const { extent } = louvreStack(vent);
   return validScrewHoles(holes)
     .filter((hole) => hole.throughWall)
     .map((hole) => {
       const angle = degToRad(hole.angleDeg);
+      const height = screwBossHeight(hole);
+      const zLow = -wallDepth / 2 - height - CUT_EPS;
+      const zHigh = wallDepth / 2 + height - SCREW_BOSS_CAP;
       return translate(
-        [Math.cos(angle) * hole.radius, Math.sin(angle) * hole.radius, 0],
+        [Math.cos(angle) * hole.radius, Math.sin(angle) * hole.radius, (zLow + zHigh) / 2],
         cylinder({
           radius: hole.diameter / 2,
-          height: (wallDepth + extent + screwBossHeight(hole)) * 2,
+          height: zHigh - zLow,
           segments: SCREW_SEGMENTS,
         }),
       );
@@ -269,9 +275,10 @@ const screwBossPilotCutouts = (
 // pilot is blind (the fan is driven from inside against the boss tips and
 // nothing penetrates the outer surface). With throughWall a mirrored nub of
 // the same footprint and height also stands proud of the OUTER wall face
-// and the pilot runs continuously through boss, wall and nub, so a screw
-// can pass all the way through while the flat outer skin stays unbroken
-// outside the nub's footprint.
+// and the pilot continues through the wall into the nub for extra thread
+// engagement - but stops SCREW_BOSS_CAP short of the nub's tip, so the
+// protruding end stays a solid capped peg and the outer surface has no
+// opening anywhere in either mode.
 const ventScrewBosses = (
   holes: VentPanel['extraScrewHoles'],
   wallDepth: number,
@@ -305,14 +312,15 @@ const ventScrewBosses = (
       );
     }
     // Pilot: blind (boss length + EMBED into the wall, meeting the blind
-    // in-wall cutout) or continuous end to end for throughWall (the wall's
-    // own segment is cut by screwBossPilotCutouts).
-    const pilotSpan = hole.throughWall
-      ? wallDepth + height * 2 + CUT_EPS * 2
-      : height + EMBED + CUT_EPS;
-    const pilotCenterZ = hole.throughWall
-      ? 0
-      : -wallDepth / 2 + (EMBED - height) / 2 - CUT_EPS / 2;
+    // in-wall cutout) or - for throughWall - from the inner boss tip through
+    // the wall into the nub, stopping SCREW_BOSS_CAP short of the nub tip
+    // (the wall's own segment is cut by screwBossPilotCutouts).
+    const pilotHighZ = hole.throughWall
+      ? wallDepth / 2 + height - SCREW_BOSS_CAP
+      : -wallDepth / 2 + EMBED;
+    const pilotLowZ = -wallDepth / 2 - height - CUT_EPS;
+    const pilotSpan = pilotHighZ - pilotLowZ;
+    const pilotCenterZ = (pilotHighZ + pilotLowZ) / 2;
     return subtract(
       union(solids),
       cylinder({
