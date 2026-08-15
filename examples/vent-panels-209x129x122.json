@@ -127,7 +127,8 @@
           "diameter": 4.3,
           "outerDiameter": 8.3,
           "height": 5,
-          "throughWall": true
+          "throughWall": true,
+          "internalHeight": 0
         }
       ]
     }

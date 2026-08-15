@@ -253,6 +253,7 @@ export class ParamsFormComponent {
       outerDiameter: 8.3,
       height: 5,
       throughWall: false,
+      internalHeight: 0,
     };
     this.updateVentPanel(index, { extraScrewHoles: [...current.extraScrewHoles, next] });
   }

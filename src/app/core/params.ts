@@ -51,6 +51,12 @@ export type VentExtraScrewHole = {
   // the protruding end stays a solid capped peg and the outer surface has
   // no opening anywhere. Default false: blind boss, outer surface untouched.
   throughWall?: boolean;
+  // Through-wall bosses only: how much of the boss protrudes on the INSIDE,
+  // clamped to [0, height]. Default 0: the inner wall face stays completely
+  // flat there and the pilot starts right at it; `height` restores the full
+  // symmetric inside-boss-plus-outside-nub. Ignored for blind bosses (which
+  // always keep the full-height inside boss).
+  internalHeight?: number;
 };
 
 // Partial-annulus standoff collar around the vent opening on the weather

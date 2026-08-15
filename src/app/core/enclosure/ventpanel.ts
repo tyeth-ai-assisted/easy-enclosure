@@ -229,7 +229,7 @@ const throughPilotCutouts = (
     .map((hole) => {
       const angle = degToRad(hole.angleDeg);
       const height = screwBossHeight(hole);
-      const zLow = -wallDepth / 2 - height - CUT_EPS;
+      const zLow = -wallDepth / 2 - screwBossInnerHeight(hole) - CUT_EPS;
       const zHigh = wallDepth / 2 + height - SCREW_BOSS_CAP;
       return translate(
         [Math.cos(angle) * hole.radius, Math.sin(angle) * hole.radius, (zLow + zHigh) / 2],
@@ -243,6 +243,17 @@ const throughPilotCutouts = (
 };
 
 const screwBossHeight = (hole: VentExtraScrewHole) => Math.max(1, hole.height ?? SCREW_BOSS_HEIGHT);
+
+// Inside protrusion of a boss. Blind bosses always use the full height;
+// through-wall bosses use internalHeight (default 0 = flush inner wall
+// face), clamped to [0, height].
+const screwBossInnerHeight = (hole: VentExtraScrewHole) => {
+  const height = screwBossHeight(hole);
+  if (!hole.throughWall) {
+    return height;
+  }
+  return Math.min(height, Math.max(0, hole.internalHeight ?? 0));
+};
 
 // Pilot-hole cutouts (the wall's share of the bore) for the inside screw
 // bosses. A blind boss drills only EMBED deep into the wall from the inner
@@ -286,20 +297,26 @@ const ventScrewBosses = (
   const bosses = validScrewHoles(holes).map((hole) => {
     const angle = degToRad(hole.angleDeg);
     const height = screwBossHeight(hole);
+    const innerHeight = screwBossInnerHeight(hole);
     const outerRadius =
       Math.max(hole.diameter + 1.6, hole.outerDiameter ?? hole.diameter + SCREW_BOSS_WALL * 2) / 2;
     const x = Math.cos(angle) * hole.radius;
     const y = Math.sin(angle) * hole.radius;
 
-    // Inner boss body spans from EMBED inside the wall down to its tip.
-    const solids: Geom3[] = [
-      cylinder({
-        radius: outerRadius,
-        height: height + EMBED,
-        center: [x, y, -wallDepth / 2 + (EMBED - height) / 2],
-        segments: SCREW_SEGMENTS,
-      }),
-    ];
+    // Inner boss body spans from EMBED inside the wall down to its tip. A
+    // through-wall boss with internalHeight 0 has no inside protrusion at
+    // all - the inner wall face stays flat there.
+    const solids: Geom3[] = [];
+    if (innerHeight > 0) {
+      solids.push(
+        cylinder({
+          radius: outerRadius,
+          height: innerHeight + EMBED,
+          center: [x, y, -wallDepth / 2 + (EMBED - innerHeight) / 2],
+          segments: SCREW_SEGMENTS,
+        }),
+      );
+    }
     if (hole.throughWall) {
       // Mirrored nub standing outward from the outer wall face.
       solids.push(
@@ -312,13 +329,14 @@ const ventScrewBosses = (
       );
     }
     // Pilot: blind (boss length + EMBED into the wall, meeting the blind
-    // in-wall cutout) or - for throughWall - from the inner boss tip through
-    // the wall into the nub, stopping SCREW_BOSS_CAP short of the nub tip
-    // (the wall's own segment is cut by screwBossPilotCutouts).
+    // in-wall cutout) or - for throughWall - from wherever the inside starts
+    // (inner boss tip, or the inner wall face itself when internalHeight is
+    // 0) through the wall into the nub, stopping SCREW_BOSS_CAP short of the
+    // nub tip (the wall's own segment is cut by screwBossPilotCutouts).
     const pilotHighZ = hole.throughWall
       ? wallDepth / 2 + height - SCREW_BOSS_CAP
       : -wallDepth / 2 + EMBED;
-    const pilotLowZ = -wallDepth / 2 - height - CUT_EPS;
+    const pilotLowZ = -wallDepth / 2 - innerHeight - CUT_EPS;
     const pilotSpan = pilotHighZ - pilotLowZ;
     const pilotCenterZ = (pilotHighZ + pilotLowZ) / 2;
     return subtract(

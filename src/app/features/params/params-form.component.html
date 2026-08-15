@@ -834,6 +834,24 @@
                     "
                   />
                 </div>
+
+                @if (screwHole.throughWall) {
+                  <div class="input-group">
+                    <label>Internal Height</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      [value]="screwHole.internalHeight ?? 0"
+                      (keydown.enter)="$any($event.target).blur()"
+                      (blur)="
+                        updateVentWallScrewHole(ventIndex, holeIndex, {
+                          internalHeight: +$any($event.target).value,
+                        })
+                      "
+                    />
+                  </div>
+                }
               </div>
             }
             <button type="button" class="add-btn" (click)="addVentWallScrewHole(ventIndex)">
