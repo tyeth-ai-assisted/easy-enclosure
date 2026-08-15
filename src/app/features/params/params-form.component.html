@@ -821,6 +821,19 @@
                     "
                   />
                 </div>
+
+                <div class="input-group">
+                  <label>Through Wall</label>
+                  <input
+                    type="checkbox"
+                    [checked]="!!screwHole.throughWall"
+                    (change)="
+                      updateVentWallScrewHole(ventIndex, holeIndex, {
+                        throughWall: $any($event.target).checked,
+                      })
+                    "
+                  />
+                </div>
               </div>
             }
             <button type="button" class="add-btn" (click)="addVentWallScrewHole(ventIndex)">

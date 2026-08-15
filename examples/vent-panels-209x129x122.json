@@ -118,14 +118,16 @@
           "radius": 44,
           "diameter": 4.3,
           "outerDiameter": 8.3,
-          "height": 5
+          "height": 5,
+          "throughWall": false
         },
         {
           "angleDeg": 270,
           "radius": 44,
           "diameter": 4.3,
           "outerDiameter": 8.3,
-          "height": 5
+          "height": 5,
+          "throughWall": true
         }
       ]
     }

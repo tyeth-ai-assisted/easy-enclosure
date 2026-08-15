@@ -45,6 +45,13 @@ export type VentExtraScrewHole = {
   // Defaults are applied in the geometry builder when omitted.
   outerDiameter?: number;
   height?: number;
+  // Wall-mount bosses only: when true, a mirrored nub also stands proud of
+  // the OUTER wall face and the pilot runs continuously through inner boss,
+  // wall and nub, so a screw can pass all the way through. The flat outer
+  // wall skin itself stays unbroken outside the nub's footprint - the hole
+  // is always surrounded by raised solid material, never by the bare thin
+  // wall. Default false: blind boss, outer surface untouched.
+  throughWall?: boolean;
 };
 
 // Partial-annulus standoff collar around the vent opening on the weather

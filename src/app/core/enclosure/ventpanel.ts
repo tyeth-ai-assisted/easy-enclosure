@@ -210,28 +210,54 @@ const boreCutout = (vent: VentPanel, wallDepth: number): Geom3 => {
 const validScrewHoles = (holes: VentPanel['extraScrewHoles']) =>
   holes.filter((hole) => hole.diameter > 0 && hole.radius > 0);
 
+// Full-length pilot rods for through-wall screw bosses, long enough to pass
+// every vent part along the screw axis. Subtracted from the vent's unioned
+// additions so the bore stays genuinely continuous end to end even where
+// the rain collar's sheared skirt or a blade tip crosses the screw's path
+// outside the wall.
+const throughPilotCutouts = (
+  vent: VentPanel,
+  holes: VentPanel['extraScrewHoles'],
+  wallDepth: number,
+): Geom3[] => {
+  const { extent } = louvreStack(vent);
+  return validScrewHoles(holes)
+    .filter((hole) => hole.throughWall)
+    .map((hole) => {
+      const angle = degToRad(hole.angleDeg);
+      return translate(
+        [Math.cos(angle) * hole.radius, Math.sin(angle) * hole.radius, 0],
+        cylinder({
+          radius: hole.diameter / 2,
+          height: (wallDepth + extent + screwBossHeight(hole)) * 2,
+          segments: SCREW_SEGMENTS,
+        }),
+      );
+    });
+};
+
 const screwBossHeight = (hole: VentExtraScrewHole) => Math.max(1, hole.height ?? SCREW_BOSS_HEIGHT);
 
-// Blind pilot-hole cutouts for the inside screw bosses: drilled EMBED deep
-// into the wall from the inner face for extra thread engagement, but never
-// through to the outer weather surface - the remaining outer skin is
-// wallDepth - EMBED. (These used to be straight-through holes, which gave
-// wind-driven rain a direct path past the louvres.)
+// Pilot-hole cutouts (the wall's share of the bore) for the inside screw
+// bosses. A blind boss drills only EMBED deep into the wall from the inner
+// face for extra thread engagement, never through to the outer weather
+// surface - the remaining outer skin is wallDepth - EMBED. A through-wall
+// boss cuts the full wall thickness instead: the outer face there is
+// covered by the raised outer nub (see ventScrewBosses), so the hole is
+// still surrounded by solid raised material, never by the bare thin wall.
 const screwBossPilotCutouts = (
   holes: VentPanel['extraScrewHoles'],
   wallDepth: number,
 ): Geom3[] => {
   return validScrewHoles(holes).map((hole) => {
     const angle = degToRad(hole.angleDeg);
+    const height = hole.throughWall ? wallDepth + CUT_EPS : EMBED + CUT_EPS;
+    const centerZ = hole.throughWall ? 0 : -wallDepth / 2 + (EMBED - CUT_EPS) / 2;
     return translate(
-      [
-        Math.cos(angle) * hole.radius,
-        Math.sin(angle) * hole.radius,
-        -wallDepth / 2 + (EMBED - CUT_EPS) / 2,
-      ],
+      [Math.cos(angle) * hole.radius, Math.sin(angle) * hole.radius, centerZ],
       cylinder({
         radius: hole.diameter / 2,
-        height: EMBED + CUT_EPS,
+        height,
         segments: SCREW_SEGMENTS,
       }),
     );
@@ -239,9 +265,13 @@ const screwBossPilotCutouts = (
 };
 
 // Raised screw bosses standing inward from the inner wall face, one per
-// extraScrewHole, each with a blind pilot hole down its centre. The fan is
-// driven from inside the enclosure against the boss tips; nothing penetrates
-// the outer surface.
+// extraScrewHole, each with a pilot hole down its centre. By default the
+// pilot is blind (the fan is driven from inside against the boss tips and
+// nothing penetrates the outer surface). With throughWall a mirrored nub of
+// the same footprint and height also stands proud of the OUTER wall face
+// and the pilot runs continuously through boss, wall and nub, so a screw
+// can pass all the way through while the flat outer skin stays unbroken
+// outside the nub's footprint.
 const ventScrewBosses = (
   holes: VentPanel['extraScrewHoles'],
   wallDepth: number,
@@ -253,20 +283,42 @@ const ventScrewBosses = (
       Math.max(hole.diameter + 1.6, hole.outerDiameter ?? hole.diameter + SCREW_BOSS_WALL * 2) / 2;
     const x = Math.cos(angle) * hole.radius;
     const y = Math.sin(angle) * hole.radius;
-    // Boss body spans from EMBED inside the wall down to the tip; the pilot
-    // runs the full boss length and meets the blind in-wall cutout above.
-    const centerZ = -wallDepth / 2 + (EMBED - height) / 2;
-    return subtract(
+
+    // Inner boss body spans from EMBED inside the wall down to its tip.
+    const solids: Geom3[] = [
       cylinder({
         radius: outerRadius,
         height: height + EMBED,
-        center: [x, y, centerZ],
+        center: [x, y, -wallDepth / 2 + (EMBED - height) / 2],
         segments: SCREW_SEGMENTS,
       }),
+    ];
+    if (hole.throughWall) {
+      // Mirrored nub standing outward from the outer wall face.
+      solids.push(
+        cylinder({
+          radius: outerRadius,
+          height: height + EMBED,
+          center: [x, y, wallDepth / 2 - (EMBED - height) / 2],
+          segments: SCREW_SEGMENTS,
+        }),
+      );
+    }
+    // Pilot: blind (boss length + EMBED into the wall, meeting the blind
+    // in-wall cutout) or continuous end to end for throughWall (the wall's
+    // own segment is cut by screwBossPilotCutouts).
+    const pilotSpan = hole.throughWall
+      ? wallDepth + height * 2 + CUT_EPS * 2
+      : height + EMBED + CUT_EPS;
+    const pilotCenterZ = hole.throughWall
+      ? 0
+      : -wallDepth / 2 + (EMBED - height) / 2 - CUT_EPS / 2;
+    return subtract(
+      union(solids),
       cylinder({
         radius: hole.diameter / 2,
-        height: height + EMBED + CUT_EPS,
-        center: [x, y, centerZ - CUT_EPS / 2],
+        height: pilotSpan,
+        center: [x, y, pilotCenterZ],
         segments: SCREW_SEGMENTS,
       }),
     );
@@ -861,7 +913,16 @@ export const ventPanelAdditions = (
     }
 
     if (parts.length > 0) {
-      additions.push(placeOnSurface(frame, vent, union(parts)));
+      let combined = union(parts);
+      if (!vent.fanBox) {
+        // Through-wall screw pilots must clear EVERYTHING along the screw
+        // axis (collar skirt, blade tips), not just boss + wall + nub.
+        const pilots = throughPilotCutouts(vent, vent.extraScrewHoles ?? [], frame.wallDepth);
+        if (pilots.length > 0) {
+          combined = subtract(combined, union(pilots));
+        }
+      }
+      additions.push(placeOnSurface(frame, vent, combined));
     }
   });
 
