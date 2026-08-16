@@ -71,11 +71,20 @@ export type VentRainRing = {
 };
 
 export type VentFanBox = {
-  frameShape: 'square' | 'circle';
+  frameShape: 'square' | 'circle' | 'rectangle';
+  // Square / circle frames: the single shared frame dimension.
   frameSize: number;
+  // Rectangle frames only (slim / blower-style fans): independent internal
+  // frame dimensions. frameWidth spans the vent's local X, frameDepth spans
+  // local Y (the fan-insertion axis towards the duct's open face). frameSize
+  // is ignored for rectangles, so existing square/circle configs are
+  // unaffected by these fields.
+  frameWidth?: number;
+  frameDepth?: number;
   depth: number;
   wallThickness: number;
-  // Square axial fans: 4 corner holes inset from the frame edge.
+  // Square / rectangle fans: 4 corner holes inset from the nearest frame
+  // edges (each axis measured against its own frame dimension).
   screwHoleInset: number;
   screwHoleDiameter: number;
   // Circular (blower) fans: irregular mounting ears outside the frame radius.
@@ -123,6 +132,9 @@ export const DEFAULT_VENT_RAIN_RING: VentRainRing = {
 export const DEFAULT_VENT_FAN_BOX: VentFanBox = {
   frameShape: 'square',
   frameSize: 120,
+  // Rectangle-mode defaults: a generic slim 80x25 blower footprint.
+  frameWidth: 80,
+  frameDepth: 25,
   depth: 30,
   wallThickness: 2.5,
   screwHoleInset: 7.5,

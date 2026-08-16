@@ -19,8 +19,11 @@ const LOUVRE_RIM_EMBED = 1.5;
 // Radial clearance between the bore and the rain collar's inner wall.
 const RAIN_RING_CLEARANCE = 1;
 // Lateral clearance around the fan inside its duct pocket, so a real fan of
-// exactly frameSize can be slid in through the duct's open face.
+// exactly the frame dimensions can be slid in through the duct's open face.
 const FAN_POCKET_CLEARANCE = 0.5;
+// Minimum printable rib of plate material preserved between a rectangular
+// fan box's airflow opening and each of its corner screw holes.
+const FAN_PLATE_RIB = 1.2;
 // Defaults for the inside screw bosses (per-hole overrides in
 // VentExtraScrewHole.outerDiameter / .height).
 const SCREW_BOSS_HEIGHT = 5;
@@ -707,12 +710,17 @@ export const rainRing = (
 // already has its openings subtracted, so it must be unioned into the body
 // AFTER the wall cutouts have been applied.
 export const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geom3 | null => {
-  const size = box.frameSize;
   const wallT = Math.max(0.8, box.wallThickness);
   const plateT = wallT;
   const depth = Math.max(plateT + 1, box.depth);
+  const isRectangular = box.frameShape === 'rectangle';
+  // Rectangle frames use independent width (local X) / depth (local Y, the
+  // fan-insertion axis towards the open face) dimensions; square and circle
+  // frames keep the single shared frameSize on both axes.
+  const frameW = isRectangular ? (box.frameWidth ?? box.frameSize) : box.frameSize;
+  const frameD = isRectangular ? (box.frameDepth ?? box.frameSize) : box.frameSize;
 
-  if (size <= 0) {
+  if (frameW <= 0 || frameD <= 0) {
     return null;
   }
 
@@ -725,28 +733,19 @@ export const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geo
   const outerCenterZ = (z0 + z1) / 2;
   const plateCutHeight = plateT + CUT_EPS * 2;
   const plateCutCenterZ = z0 + plateT / 2;
-  // Interior pocket the fan actually sits in: the fan's own frame size plus
-  // clearance, so the fan can be slid in through the open +Y face.
-  const pocket = size + FAN_POCKET_CLEARANCE;
+  // Interior pocket the fan actually sits in: the fan's own frame dimensions
+  // plus clearance, so the fan can be slid in through the open +Y face.
+  const pocketW = frameW + FAN_POCKET_CLEARANCE;
+  const pocketD = frameD + FAN_POCKET_CLEARANCE;
 
   const solids: Geom3[] = [];
   const cuts: Geom3[] = [];
 
-  // Airflow opening through the end plate, matching the wall bore.
-  cuts.push(
-    cylinder({
-      radius: vent.diameter / 2,
-      height: plateCutHeight,
-      center: [0, 0, plateCutCenterZ],
-      segments: BORE_SEGMENTS,
-    }),
-  );
-
-  if (box.frameShape === 'square') {
+  if (box.frameShape === 'square' || isRectangular) {
     // Footprint: walls on -Y and both X sides only; the +Y face has no wall
     // so the fan can be dropped/slid into the pocket.
-    const outerW = pocket + wallT * 2;
-    const outerD = pocket + wallT;
+    const outerW = pocketW + wallT * 2;
+    const outerD = pocketD + wallT;
     const yCenter = -wallT / 2;
 
     // End plate carrying the bore and the fan's screw pattern.
@@ -757,7 +756,7 @@ export const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geo
     solids.push(
       cuboid({
         size: [outerW, wallT, outerHeight],
-        center: [0, -(pocket + wallT) / 2, outerCenterZ],
+        center: [0, -(pocketD + wallT) / 2, outerCenterZ],
       }),
     );
     // Side walls.
@@ -765,27 +764,71 @@ export const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geo
       solids.push(
         cuboid({
           size: [wallT, outerD, outerHeight],
-          center: [(sx * (pocket + wallT)) / 2, yCenter, outerCenterZ],
+          center: [(sx * (pocketW + wallT)) / 2, yCenter, outerCenterZ],
         }),
       );
     }
 
+    // 4 corner screw holes, each inset from its two nearest frame edges
+    // (independently per axis for rectangles; identical to the historical
+    // square behaviour when frameW === frameD === frameSize).
     const inset = box.screwHoleInset;
-    const offset = size / 2 - inset;
+    const offsetX = frameW / 2 - inset;
+    const offsetY = frameD / 2 - inset;
     for (const sx of [-1, 1]) {
       for (const sy of [-1, 1]) {
         cuts.push(
           cylinder({
             radius: box.screwHoleDiameter / 2,
             height: plateCutHeight,
-            center: [sx * offset, sy * offset, plateCutCenterZ],
+            center: [sx * offsetX, sy * offsetY, plateCutCenterZ],
             segments: SCREW_SEGMENTS,
           }),
         );
       }
     }
+
+    // Airflow opening through the end plate, matching the wall bore. A slim
+    // rectangular plate can be much smaller than the wall bore, so in
+    // rectangle mode the opening is clamped to keep a printable rib
+    // (FAN_PLATE_RIB) of plate around each corner screw hole and clipped to
+    // the pocket footprint - otherwise an oversized vent bore would erase
+    // the plate and its screw pattern entirely. When the bore already fits
+    // inside the plate (the normal case) both limits are no-ops and the
+    // opening is exactly the bore circle the square case cuts.
+    let boreRadius = vent.diameter / 2;
+    if (isRectangular) {
+      const screwClear = Math.hypot(offsetX, offsetY) - box.screwHoleDiameter / 2 - FAN_PLATE_RIB;
+      boreRadius = Math.max(0.5, Math.min(boreRadius, screwClear));
+    }
+    let plateBore: Geom3 = cylinder({
+      radius: boreRadius,
+      height: plateCutHeight,
+      center: [0, 0, plateCutCenterZ],
+      segments: BORE_SEGMENTS,
+    });
+    if (isRectangular) {
+      plateBore = intersect(
+        plateBore,
+        cuboid({
+          size: [pocketW, pocketD, plateCutHeight + CUT_EPS],
+          center: [0, 0, plateCutCenterZ],
+        }),
+      );
+    }
+    cuts.push(plateBore);
   } else {
-    const pocketR = pocket / 2;
+    // Airflow opening through the end plate, matching the wall bore.
+    cuts.push(
+      cylinder({
+        radius: vent.diameter / 2,
+        height: plateCutHeight,
+        center: [0, 0, plateCutCenterZ],
+        segments: BORE_SEGMENTS,
+      }),
+    );
+
+    const pocketR = pocketW / 2;
 
     // End plate carrying the bore, the screw ears and the duct wall footing.
     solids.push(
@@ -826,7 +869,7 @@ export const fanBox = (vent: VentPanel, box: VentFanBox, wallDepth: number): Geo
       const angle = degToRad(hole.angleDeg);
       const dir: [number, number] = [Math.cos(angle), Math.sin(angle)];
       const padRadius = hole.diameter / 2 + 3;
-      const anchorRadius = Math.min(hole.radius, size / 2 - padRadius / 2);
+      const anchorRadius = Math.min(hole.radius, frameW / 2 - padRadius / 2);
       const pad = (r: number) =>
         cylinder({
           radius: padRadius,

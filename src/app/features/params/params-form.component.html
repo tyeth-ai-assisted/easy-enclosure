@@ -595,20 +595,49 @@
                 (change)="updateVentFanBox(ventIndex, { frameShape: $any($event.target).value })"
               >
                 <option value="square" [selected]="fanBox.frameShape === 'square'">Square</option>
+                <option value="rectangle" [selected]="fanBox.frameShape === 'rectangle'">
+                  Rectangle
+                </option>
                 <option value="circle" [selected]="fanBox.frameShape === 'circle'">Circle</option>
               </select>
             </div>
 
-            <div class="input-group">
-              <label>Frame Size</label>
-              <input
-                type="number"
-                min="1"
-                [value]="fanBox.frameSize"
-                (keydown.enter)="$any($event.target).blur()"
-                (blur)="updateVentFanBox(ventIndex, { frameSize: +$any($event.target).value })"
-              />
-            </div>
+            @if (fanBox.frameShape !== 'rectangle') {
+              <div class="input-group">
+                <label>Frame Size</label>
+                <input
+                  type="number"
+                  min="1"
+                  [value]="fanBox.frameSize"
+                  (keydown.enter)="$any($event.target).blur()"
+                  (blur)="updateVentFanBox(ventIndex, { frameSize: +$any($event.target).value })"
+                />
+              </div>
+            }
+
+            @if (fanBox.frameShape === 'rectangle') {
+              <div class="input-group">
+                <label>Frame Width</label>
+                <input
+                  type="number"
+                  min="1"
+                  [value]="fanBox.frameWidth"
+                  (keydown.enter)="$any($event.target).blur()"
+                  (blur)="updateVentFanBox(ventIndex, { frameWidth: +$any($event.target).value })"
+                />
+              </div>
+
+              <div class="input-group">
+                <label>Frame Depth</label>
+                <input
+                  type="number"
+                  min="1"
+                  [value]="fanBox.frameDepth"
+                  (keydown.enter)="$any($event.target).blur()"
+                  (blur)="updateVentFanBox(ventIndex, { frameDepth: +$any($event.target).value })"
+                />
+              </div>
+            }
 
             <div class="input-group">
               <label>Box Depth</label>
@@ -633,7 +662,7 @@
               />
             </div>
 
-            @if (fanBox.frameShape === 'square') {
+            @if (fanBox.frameShape === 'square' || fanBox.frameShape === 'rectangle') {
               <div class="input-group">
                 <label>Screw Hole Inset</label>
                 <input

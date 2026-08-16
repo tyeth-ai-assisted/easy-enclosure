@@ -190,6 +190,15 @@ export class ParamsFormComponent {
       // preview doesn't actually use.
       patch = { ...patch, wallThickness: this.clampMin(patch.wallThickness, 0.8) };
     }
+    if (patch.frameShape === 'rectangle') {
+      // Configs created before the rectangle mode existed have no width/depth
+      // fields; seed them so the inputs and the geometry agree immediately.
+      patch = {
+        frameWidth: current.fanBox.frameWidth ?? 80,
+        frameDepth: current.fanBox.frameDepth ?? 25,
+        ...patch,
+      };
+    }
     this.updateVentPanel(index, { fanBox: { ...current.fanBox, ...patch } });
   }
 
