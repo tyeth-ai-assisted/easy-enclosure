@@ -183,7 +183,20 @@ export class ParamsFormComponent {
     if (!current?.fanBox) {
       return;
     }
+    if (patch.wallThickness !== undefined) {
+      // Keep the stored value identical to the effective one: the geometry
+      // clamps wall thickness to >= 0.8, so silently accepting a smaller or
+      // negative number here would leave the field showing a value the
+      // preview doesn't actually use.
+      patch = { ...patch, wallThickness: this.clampMin(patch.wallThickness, 0.8) };
+    }
     this.updateVentPanel(index, { fanBox: { ...current.fanBox, ...patch } });
+  }
+
+  // Clamp a user-typed numeric value to a minimum, treating NaN as the
+  // minimum.
+  private clampMin(value: number, min: number): number {
+    return Number.isFinite(value) ? Math.max(min, value) : min;
   }
 
   toggleVentRainRing(index: number, enabled: boolean): void {
@@ -196,6 +209,11 @@ export class ParamsFormComponent {
     const current = this.params().ventPanels[index];
     if (!current?.rainRing) {
       return;
+    }
+    if (patch.wallThickness !== undefined) {
+      // Same silent-clamp trap as the fan box wall: the geometry enforces
+      // >= 0.8, so store the effective value.
+      patch = { ...patch, wallThickness: this.clampMin(patch.wallThickness, 0.8) };
     }
     this.updateVentPanel(index, { rainRing: { ...current.rainRing, ...patch } });
   }
