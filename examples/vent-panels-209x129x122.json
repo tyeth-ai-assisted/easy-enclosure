@@ -1,0 +1,144 @@
+{
+  "length": 209,
+  "width": 129,
+  "height": 122,
+  "floor": 2,
+  "roof": 2,
+  "wall": 1,
+  "waterProof": true,
+  "sealThickness": 2,
+  "insertThickness": 2,
+  "insertHeight": 4,
+  "insertClearance": 0.04,
+  "showLid": true,
+  "showBase": true,
+  "showGrid": true,
+  "gridSpacing": 10,
+  "cornerRadius": 3,
+  "holes": [
+    {
+      "shape": "circle",
+      "surface": "right",
+      "diameter": 15.6,
+      "width": 10,
+      "length": 10,
+      "x": 0,
+      "y": -80
+    },
+    {
+      "shape": "circle",
+      "surface": "right",
+      "diameter": 15.6,
+      "width": 10,
+      "length": 10,
+      "x": 0,
+      "y": -40
+    },
+    {
+      "shape": "circle",
+      "surface": "right",
+      "diameter": 15.6,
+      "width": 10,
+      "length": 10,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "shape": "circle",
+      "surface": "right",
+      "diameter": 15.6,
+      "width": 10,
+      "length": 10,
+      "x": 0,
+      "y": 40
+    },
+    {
+      "shape": "circle",
+      "surface": "right",
+      "diameter": 15.6,
+      "width": 10,
+      "length": 10,
+      "x": 0,
+      "y": 80
+    }
+  ],
+  "pcbMounts": [],
+  "internalWalls": [],
+  "ventPanels": [
+    {
+      "surface": "front",
+      "x": 0,
+      "y": 0,
+      "diameter": 112,
+      "louvreCount": 9,
+      "louvreAngle": 45,
+      "louvreThickness": 1.6,
+      "louvreDrainSurface": "bottom",
+      "meshPanel": true,
+      "meshHoleSize": 4,
+      "meshPitch": 6,
+      "meshThickness": 1.2,
+      "fanBox": {
+        "frameShape": "rectangle",
+        "frameSize": 120,
+        "frameWidth": 81,
+        "frameDepth": 26,
+        "depth": 30,
+        "wallThickness": 2.5,
+        "screwHoleInset": 4.5,
+        "screwHoleDiameter": 4,
+        "extraScrewHoles": []
+      },
+      "rainRing": {
+        "enabled": true,
+        "wallThickness": 2.5,
+        "gapAngleDeg": 45
+      },
+      "extraScrewHoles": []
+    },
+    {
+      "surface": "back",
+      "x": 0,
+      "y": 0,
+      "diameter": 72,
+      "louvreCount": 7,
+      "louvreAngle": 45,
+      "louvreThickness": 1.4,
+      "louvreDrainSurface": "bottom",
+      "meshPanel": true,
+      "meshHoleSize": 4,
+      "meshPitch": 6,
+      "meshThickness": 1.2,
+      "rainRing": {
+        "enabled": true,
+        "wallThickness": 2.5,
+        "gapAngleDeg": 45
+      },
+      "extraScrewHoles": [
+        {
+          "angleDeg": 90,
+          "radius": 44,
+          "diameter": 4.3,
+          "outerDiameter": 8.3,
+          "height": 5,
+          "throughWall": false
+        },
+        {
+          "angleDeg": 270,
+          "radius": 44,
+          "diameter": 4.3,
+          "outerDiameter": 8.3,
+          "height": 5,
+          "throughWall": true,
+          "internalHeight": 0
+        }
+      ]
+    }
+  ],
+  "wallMounts": true,
+  "wallMountCount": 4,
+  "wallMountScrewDiameter": 3.98,
+  "lidScrews": true,
+  "lidScrewDiameter": 2.98,
+  "baseLidScrewDiameter": 2.88
+}

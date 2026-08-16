@@ -5,6 +5,7 @@ import { Params } from '../params';
 import { screws } from './screws';
 import { subtract } from '@jscad/modeling/src/operations/booleans';
 import { holes } from './holes';
+import { ventPanelAdditions, ventPanelCutouts } from './ventpanel';
 
 const { union } = booleans;
 const { translate } = transforms;
@@ -67,9 +68,19 @@ export const lid = (params: Params) => {
     subtracts.push(holes(params, ['top']));
   }
 
-  if (subtracts.length > 0) {
-    return subtract(union(entities), union(subtracts));
-  } else {
-    return union(entities);
+  const ventCutouts = ventPanelCutouts(params, ['top']);
+  if (ventCutouts) {
+    subtracts.push(ventCutouts);
   }
+
+  let result = subtracts.length > 0 ? subtract(union(entities), union(subtracts)) : union(entities);
+
+  // Vent panel additions span the vent openings, so union them in after the
+  // cutouts have been subtracted.
+  const ventAdditions = ventPanelAdditions(params, ['top']);
+  if (ventAdditions) {
+    result = union(result, ventAdditions);
+  }
+
+  return result;
 };

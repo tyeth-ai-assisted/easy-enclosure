@@ -1,6 +1,16 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 
-import type { Hole, InternalWall, PCBMount, Params } from '../../core/params';
+import type {
+  Hole,
+  InternalWall,
+  PCBMount,
+  Params,
+  VentExtraScrewHole,
+  VentFanBox,
+  VentPanel,
+  VentRainRing,
+} from '../../core/params';
+import { DEFAULT_VENT_FAN_BOX, DEFAULT_VENT_RAIN_RING } from '../../core/params';
 import { EnclosureStateService } from '../../core/state/enclosure-state.service';
 
 type Surface = 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back';
@@ -126,6 +136,177 @@ export class ParamsFormComponent {
     this.state.patchParams({
       internalWalls: current.internalWalls.map((item, i) =>
         i === index ? { ...item, ...patch } : item,
+      ),
+    });
+  }
+
+  addVentPanel(): void {
+    const current = this.params();
+    const next: VentPanel = {
+      surface: 'front',
+      x: 0,
+      y: 0,
+      diameter: 40,
+      louvreCount: 5,
+      louvreAngle: 45,
+      louvreThickness: 1.2,
+      louvreDrainSurface: 'bottom',
+      meshPanel: false,
+      meshHoleSize: 4,
+      meshPitch: 6,
+      meshThickness: 1.2,
+      extraScrewHoles: [],
+    };
+    this.state.patchParams({ ventPanels: [...current.ventPanels, next] });
+  }
+
+  removeVentPanel(index: number): void {
+    const current = this.params();
+    this.state.patchParams({ ventPanels: current.ventPanels.filter((_, i) => i !== index) });
+  }
+
+  updateVentPanel(index: number, patch: Partial<VentPanel>): void {
+    const current = this.params();
+    this.state.patchParams({
+      ventPanels: current.ventPanels.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+    });
+  }
+
+  toggleVentFanBox(index: number, enabled: boolean): void {
+    this.updateVentPanel(index, {
+      fanBox: enabled ? { ...DEFAULT_VENT_FAN_BOX, extraScrewHoles: [] } : undefined,
+    });
+  }
+
+  updateVentFanBox(index: number, patch: Partial<VentFanBox>): void {
+    const current = this.params().ventPanels[index];
+    if (!current?.fanBox) {
+      return;
+    }
+    if (patch.wallThickness !== undefined) {
+      // Keep the stored value identical to the effective one: the geometry
+      // clamps wall thickness to >= 0.8, so silently accepting a smaller or
+      // negative number here would leave the field showing a value the
+      // preview doesn't actually use.
+      patch = { ...patch, wallThickness: this.clampMin(patch.wallThickness, 0.8) };
+    }
+    if (patch.frameShape === 'rectangle') {
+      // Configs created before the rectangle mode existed have no width/depth
+      // fields; seed them so the inputs and the geometry agree immediately.
+      patch = {
+        frameWidth: current.fanBox.frameWidth ?? 80,
+        frameDepth: current.fanBox.frameDepth ?? 25,
+        ...patch,
+      };
+    }
+    this.updateVentPanel(index, { fanBox: { ...current.fanBox, ...patch } });
+  }
+
+  // Clamp a user-typed numeric value to a minimum, treating NaN as the
+  // minimum.
+  private clampMin(value: number, min: number): number {
+    return Number.isFinite(value) ? Math.max(min, value) : min;
+  }
+
+  toggleVentRainRing(index: number, enabled: boolean): void {
+    this.updateVentPanel(index, {
+      rainRing: enabled ? { ...DEFAULT_VENT_RAIN_RING } : undefined,
+    });
+  }
+
+  updateVentRainRing(index: number, patch: Partial<VentRainRing>): void {
+    const current = this.params().ventPanels[index];
+    if (!current?.rainRing) {
+      return;
+    }
+    if (patch.wallThickness !== undefined) {
+      // Same silent-clamp trap as the fan box wall: the geometry enforces
+      // >= 0.8, so store the effective value.
+      patch = { ...patch, wallThickness: this.clampMin(patch.wallThickness, 0.8) };
+    }
+    this.updateVentPanel(index, { rainRing: { ...current.rainRing, ...patch } });
+  }
+
+  addVentFanBoxScrewHole(index: number): void {
+    const current = this.params().ventPanels[index];
+    if (!current?.fanBox) {
+      return;
+    }
+    const next: VentExtraScrewHole = {
+      angleDeg: 90,
+      radius: current.diameter / 2 + 8,
+      diameter: 4.3,
+    };
+    this.updateVentFanBox(index, {
+      extraScrewHoles: [...current.fanBox.extraScrewHoles, next],
+    });
+  }
+
+  removeVentFanBoxScrewHole(index: number, holeIndex: number): void {
+    const current = this.params().ventPanels[index];
+    if (!current?.fanBox) {
+      return;
+    }
+    this.updateVentFanBox(index, {
+      extraScrewHoles: current.fanBox.extraScrewHoles.filter((_, i) => i !== holeIndex),
+    });
+  }
+
+  updateVentFanBoxScrewHole(
+    index: number,
+    holeIndex: number,
+    patch: Partial<VentExtraScrewHole>,
+  ): void {
+    const current = this.params().ventPanels[index];
+    if (!current?.fanBox) {
+      return;
+    }
+    this.updateVentFanBox(index, {
+      extraScrewHoles: current.fanBox.extraScrewHoles.map((item, i) =>
+        i === holeIndex ? { ...item, ...patch } : item,
+      ),
+    });
+  }
+
+  addVentWallScrewHole(index: number): void {
+    const current = this.params().ventPanels[index];
+    if (!current) {
+      return;
+    }
+    const next: VentExtraScrewHole = {
+      angleDeg: 90,
+      radius: current.diameter / 2 + 8,
+      diameter: 4.3,
+      outerDiameter: 8.3,
+      height: 5,
+      throughWall: false,
+      internalHeight: 0,
+    };
+    this.updateVentPanel(index, { extraScrewHoles: [...current.extraScrewHoles, next] });
+  }
+
+  removeVentWallScrewHole(index: number, holeIndex: number): void {
+    const current = this.params().ventPanels[index];
+    if (!current) {
+      return;
+    }
+    this.updateVentPanel(index, {
+      extraScrewHoles: current.extraScrewHoles.filter((_, i) => i !== holeIndex),
+    });
+  }
+
+  updateVentWallScrewHole(
+    index: number,
+    holeIndex: number,
+    patch: Partial<VentExtraScrewHole>,
+  ): void {
+    const current = this.params().ventPanels[index];
+    if (!current) {
+      return;
+    }
+    this.updateVentPanel(index, {
+      extraScrewHoles: current.extraScrewHoles.map((item, i) =>
+        i === holeIndex ? { ...item, ...patch } : item,
       ),
     });
   }
